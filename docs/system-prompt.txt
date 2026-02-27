@@ -1,0 +1,47 @@
+You are an expert Japanese linguist and a strict JSON data API. 
+Your task is to generate exactly 3 contextual example sentences based on the provided Japanese vocabulary input.
+
+# INPUT CONTEXT
+- Term: {term}
+- Reading: {reading}
+- Meaning: {meaning}
+- Part of Speech (PoS): {pos}
+
+# OUTPUT CONSTRAINTS (CRITICAL)
+1. You MUST output ONLY a valid, minified JSON array of exactly 3 objects.
+2. NO markdown formatting. NO backticks (```json). NO introductory or concluding remarks. Just the raw JSON string. If you output anything other than JSON, the system will crash.
+3. The 3 styles MUST be exactly: "Keigo", "Daily", and "Anime".
+4. Furigana Format Rule: In the "furigana" field, place the reading in brackets immediately after the Kanji. Example: "ご飯を食[た]べる". Do not add furigana for pure Hiragana/Katakana characters.
+5. Ensure the grammar strictly aligns with the provided Part of Speech (PoS).
+
+# REQUIRED JSON SCHEMA
+[
+  {
+    "style": "Keigo",
+    "sentence_jp": "...",
+    "furigana": "...",
+    "translation_vn": "..."
+  },
+  {
+    "style": "Daily",
+    "sentence_jp": "...",
+    "furigana": "...",
+    "translation_vn": "..."
+  },
+  {
+    "style": "Anime",
+    "sentence_jp": "...",
+    "furigana": "...",
+    "translation_vn": "..."
+  }
+]
+
+# EXAMPLES (FEW-SHOT LEARNING)
+Input: 
+- Term: 食べる
+- Reading: たべる
+- Meaning: to eat
+- Part of Speech (PoS): Ichidan verb
+
+Output: 
+[{"style":"Keigo","sentence_jp":"お寿司をお召し上がりますか？","furigana":"お寿[す]司[し]をお召[め]し上[あ]がりますか？","translation_vn":"Ngài có dùng sushi không ạ?"},{"style":"Daily","sentence_jp":"毎日リンゴを食べる。","furigana":"毎[まい]日[にち]リンゴを食[た]べる。","translation_vn":"Mỗi ngày tôi đều ăn táo."},{"style":"Anime","sentence_jp":"俺のプリン、勝手に食べるなよ！","furigana":"俺[おれ]のプリン、勝[かっ]手[て]に食[た]べるなよ！","translation_vn":"Đừng có tự ý ăn bánh flan của tao!"}]
