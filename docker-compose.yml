@@ -1,34 +1,64 @@
-version: '3.8'
-
 services:
-  db:
-    build: ./db
-    container_name: jbrain-db
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: jbrain_admin
-      POSTGRES_PASSWORD: jbrain_password
-      POSTGRES_DB: jbrain_db
-    volumes:
-      - ./db_data:/var/lib/postgresql/data
-    restart: unless-stopped
+    # =========================================================================
+    # STEP 1: DATABASE (PostgreSQL 16 + pgvector)
+    # =========================================================================
+    db:
+        build:
+            context: ./db
+            dockerfile: Dockerfile
+        container_name: jbrain-db
+        ports:
+            - "5432:5432"
+        environment:
+            POSTGRES_USER: jbrain_admin
+            POSTGRES_PASSWORD: jbrain_password
+            POSTGRES_DB: jbrain_db
+        volumes:
+            - pgdata:/var/lib/postgresql/data
+        restart: unless-stopped
+        networks:
+            - jbrain_network
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U jbrain_admin -d jbrain_db"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+    server:
+        build: ./server
+        container_name: jbrain-server
+        ports:
+            - "8080:8080"
+        depends_on:
+            db:
+                condition: service_healthy
+        environment:
+            SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/jbrain_db
+            SPRING_DATASOURCE_USERNAME: jbrain_admin
+            SPRING_DATASOURCE_PASSWORD: jbrain_password
+            AI_MODEL_URL: http://host.docker.internal:1234
+            AI_MODEL_API_KEY: lm-studio
+            AI_MODEL_NAME: qwen-3-4b-instruct
+            AI_MODEL_TEMPERATURE: "0.5"
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+        networks:
+            - jbrain_network
 
-  # server:
-  #   build: ./server
-  #   container_name: jbrain-server
-  #   ports:
-  #     - "8080:8080"
-  #   depends_on:
-  #     - db
-  #   environment:
-  #     SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/jbrain_db
-  #     AI_MODEL_URL: http://host.docker.internal:1234/v1 #Connect to LM Studio
+    client:
+        build:
+            context: ./client
+            dockerfile: Dockerfile.dev
+        container_name: jbrain-client
+        ports:
+            - "3000:3000"
+        depends_on:
+            - server
+        networks:
+            - jbrain_network
 
-  # client:
-  #   build: ./client
-  #   container_name: jbrain-client
-  #   ports:
-  #     - "3000:3000"
-  #   depends_on:
-  #     - server
+networks:
+    jbrain_network:
+        driver: bridge
+
+volumes:
+    pgdata:

@@ -1,3 +1,82 @@
 spring:
-  application:
-    name: j-brain
+    application:
+        name: j-brain
+
+    profiles:
+        active: dev
+
+    # ============================================================
+    # DATABASE — PostgreSQL 16 via JDBC (blocking JPA writes)
+    # ============================================================
+    datasource:
+        url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/jbrain_db}?reWriteBatchedInserts=true
+        username: ${SPRING_DATASOURCE_USERNAME:jbrain_admin}
+        password: ${SPRING_DATASOURCE_PASSWORD:jbrain_password}
+        driver-class-name: org.postgresql.Driver
+        hikari:
+            # Tuned for a modest single-instance deployment (adjust per load)
+            maximum-pool-size: 10
+            minimum-idle: 3
+            connection-timeout: 20000 # 20s — fail fast on DB unreachable
+            idle-timeout: 600000 # 10m
+            max-lifetime: 1800000 # 30m
+
+    jpa:
+        hibernate:
+            # Schema is owned by init.sql / Flyway — never let Hibernate touch DDL
+            ddl-auto: validate
+        show-sql: false
+        open-in-view: false
+        properties:
+            hibernate:
+                jdbc:
+                    time_zone: UTC
+
+    # ============================================================
+    # SPRING AI — OpenAI-compatible client pointing to LM Studio
+    # env vars override at runtime when deployed inside Docker
+    # ============================================================
+    ai:
+        openai:
+            api-key: ${AI_MODEL_API_KEY:lm-studio}
+            base-url: ${AI_MODEL_URL:http://host.docker.internal:1234}
+            chat:
+                options:
+                    model: ${AI_MODEL_NAME:qwen-3-4b-instruct}
+                    temperature: ${AI_MODEL_TEMPERATURE:0.7}
+
+# ============================================================
+# JWT — stateless token auth
+# ============================================================
+jwt:
+    secret: ${JWT_SECRET:jbrain_super_secret_key_which_must_be_at_least_256_bits_long_for_hs256}
+    expiration_ms: ${JWT_EXPIRATION_MS:86400000} # 24 h default
+
+# ============================================================
+# WEBCLIENT TIMEOUTS — Jotoba external API calls
+# ============================================================
+webclient:
+    jotoba:
+        connect-timeout-ms: 5000 # TCP handshake deadline (5 s)
+        response-timeout-ms: 10000 # Full response body deadline (10 s)
+
+# ============================================================
+# ACTUATOR — health probe used by Docker healthcheck
+# ============================================================
+management:
+    endpoints:
+        web:
+            exposure:
+                include: health, info
+    endpoint:
+        health:
+            show-details: never
+
+# ============================================================
+# OPEN API / SWAGGER UI
+# ============================================================
+springdoc:
+    swagger-ui:
+        path: /swagger-ui.html
+    api-docs:
+        path: /v3/api-docs

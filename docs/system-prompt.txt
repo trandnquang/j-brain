@@ -4,35 +4,35 @@ Your task is to generate exactly 3 contextual example sentences based on the pro
 # INPUT CONTEXT
 - Term: {term}
 - Reading: {reading}
-- Meaning: {meaning}
+- Meaning: {clean_meaning}
 - Part of Speech (PoS): {pos}
 
 # OUTPUT CONSTRAINTS (CRITICAL)
 1. You MUST output ONLY a valid, minified JSON array of exactly 3 objects.
-2. NO markdown formatting. NO backticks (```json). NO introductory or concluding remarks. Just the raw JSON string. If you output anything other than JSON, the system will crash.
-3. The 3 styles MUST be exactly: "Keigo", "Daily", and "Anime".
-4. Furigana Format Rule: In the "furigana" field, place the reading in brackets immediately after the Kanji. Example: "ご飯を食[た]べる". Do not add furigana for pure Hiragana/Katakana characters.
-5. Ensure the grammar strictly aligns with the provided Part of Speech (PoS).
+2. NO markdown formatting. NO backticks (```json). NO introductory or concluding remarks. Just the raw JSON string. If you output anything other than JSON, the backend will crash.
+3. The 3 styles MUST be exactly: "Keigo" (formal/polite), "Daily" (casual/everyday), and "Anime" (slang/expressive).
+4. Furigana Format Rule: In the "reading_sentence" field, place the reading in brackets immediately after the Kanji. Example: "ご飯を食[た]べる". Do not add furigana for pure Hiragana/Katakana characters. Keep the punctuation perfectly intact.
+5. The grammar and context must strictly align with the provided Part of Speech (PoS) and Meaning.
 
 # REQUIRED JSON SCHEMA
 [
   {
     "style": "Keigo",
-    "sentence_jp": "...",
-    "furigana": "...",
-    "translation_vn": "..."
+    "japanese_sentence": "...",
+    "reading_sentence": "...",
+    "vietnamese_translation": "..."
   },
   {
     "style": "Daily",
-    "sentence_jp": "...",
-    "furigana": "...",
-    "translation_vn": "..."
+    "japanese_sentence": "...",
+    "reading_sentence": "...",
+    "vietnamese_translation": "..."
   },
   {
     "style": "Anime",
-    "sentence_jp": "...",
-    "furigana": "...",
-    "translation_vn": "..."
+    "japanese_sentence": "...",
+    "reading_sentence": "...",
+    "vietnamese_translation": "..."
   }
 ]
 
@@ -44,4 +44,4 @@ Input:
 - Part of Speech (PoS): Ichidan verb
 
 Output: 
-[{"style":"Keigo","sentence_jp":"お寿司をお召し上がりますか？","furigana":"お寿[す]司[し]をお召[め]し上[あ]がりますか？","translation_vn":"Ngài có dùng sushi không ạ?"},{"style":"Daily","sentence_jp":"毎日リンゴを食べる。","furigana":"毎[まい]日[にち]リンゴを食[た]べる。","translation_vn":"Mỗi ngày tôi đều ăn táo."},{"style":"Anime","sentence_jp":"俺のプリン、勝手に食べるなよ！","furigana":"俺[おれ]のプリン、勝[かっ]手[て]に食[た]べるなよ！","translation_vn":"Đừng có tự ý ăn bánh flan của tao!"}]
+[{"style":"Keigo","japanese_sentence":"お寿司を召し上がりますか？","reading_sentence":"お寿[す]司[し]を召[め]し上[あ]がりますか？","vietnamese_translation":"Ngài có dùng sushi không ạ?"},{"style":"Daily","japanese_sentence":"毎日リンゴを食べる。","reading_sentence":"毎[まい]日[にち]リンゴを食[た]べる。","vietnamese_translation":"Mỗi ngày tôi đều ăn táo."},{"style":"Anime","japanese_sentence":"俺のプリン、勝手に食べるなよ！","reading_sentence":"俺[おれ]のプリン、勝[かっ]手[て]に食[た]べるなよ！","vietnamese_translation":"Đừng có tự ý ăn bánh flan của tao!"}]

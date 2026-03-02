@@ -1,23 +1,36 @@
-# Makefile
-.PHONY: build up down logs clean
+.PHONY: up down logs build clean db-shell db-reset
 
-# Khởi động toàn bộ hệ thống
+# Start all services defined in docker-compose.yml (detached mode)
 up:
-	docker-compose up -d
+	docker compose up -d
 
-# Dừng hệ thống
+# Stop and remove all containers (retains volumes)
 down:
-	docker-compose down
+	docker compose down
 
-# Build lại các image (sau khi sửa code)
-build:
-	docker-compose build
+# Stream logs from all services (Ctrl+C to exit)
+logs:
+	docker compose logs -f
 
-# Xem log của server
+# Stream logs from the database service only
+logs-db:
+	docker compose logs -f db
+
+# Stream logs from the backend service only
 logs-server:
-	docker-compose logs -f server
+	docker compose logs -f server
 
-# Dọn dẹp hệ thống và volume (Xóa sạch DB)
+# Force rebuild all Docker images then start
+build:
+	docker compose build --no-cache
+
+# Remove all containers AND volumes (destroys DB data — use with caution)
 clean:
-	docker-compose down -v
-	rm -rf db_data/
+	docker compose down -v
+
+# Open a psql shell inside the running DB container
+db-shell:
+	docker exec -it jbrain-db psql -U jbrain_admin -d jbrain_db
+
+# Drop and recreate the DB volume, then restart (full DB reset)
+db-reset: clean up

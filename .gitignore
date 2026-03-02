@@ -1,0 +1,14 @@
+.DS_Store
+node_modules/
+dist/
+target/
+*.class
+.mvn/
+.idea/
+.vscode/
+bin/
+db_data/
+.env
+*.zip
+*.tar.gz
+*.log
