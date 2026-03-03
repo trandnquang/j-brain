@@ -35,17 +35,13 @@ export default function DictionarySearch() {
 
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // ── Debounced live suggestions (300 ms) ───────────────────────────────────
+    // ── Submit-driven search (Item 6) ─────────────────────────────────────────
+    // WHY: debounce auto-fetch removed — prevents excessive Jotoba API calls
+    // and gives users explicit control. Search fires only on form submit/Enter.
     const handleInputChange = useCallback((value: string) => {
         setInput(value);
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        if (!value.trim()) {
-            setKeyword("");
-            return;
-        }
-        debounceRef.current = setTimeout(() => {
-            setKeyword(value.trim());
-        }, 300);
+        // Clear results when input is cleared
+        if (!value.trim()) setKeyword("");
     }, []);
 
     // Flush immediately on Enter
@@ -332,10 +328,17 @@ export default function DictionarySearch() {
                 </div>
             </div>
 
-            {/* ── Word detail drawer (AI examples triggered from here) ── */}
+            {/* ── Word detail drawer ── */}
             <WordDetailDrawer
                 result={selectedWord as never}
                 onClose={() => setSelectedWord(null)}
+                onNavigate={(kw, navMode) => {
+                    const target = navMode ?? "words";
+                    setMode(target);
+                    setInput(kw);
+                    setKeyword(kw);
+                    setSelectedWord(null);
+                }}
             />
         </>
     );

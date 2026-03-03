@@ -1,64 +1,38 @@
-/**
- * FuriganaText — renders Jotoba bracket-format furigana as proper HTML ruby text.
- *
- * Input format: "[走|はし]る" → <ruby>走<rt>はし</rt></ruby>る
- * Falls back to plain text stripping when ruby is not needed.
- */
+import { parseFurigana } from "../lib/parseFurigana";
 
 interface Props {
-    furigana: string;
+    /** Raw Jotoba bracket-format furigana string, e.g. "[食|た]べる" */
+    furigana: string | null | undefined;
+    /** Applied to the wrapping <span> — use for font-size control */
     className?: string;
 }
 
-// Segment: either a [kanji|kana] pair or a plain kana/text chunk
-type Segment = { kanji: string; kana: string } | { plain: string };
-
-function parseFurigana(input: string): Segment[] {
-    const segments: Segment[] = [];
-    // Matches [kanji|reading] brackets
-    const regex = /\[([^\|]+)\|([^\]]+)\]/g;
-    let last = 0,
-        match: RegExpExecArray | null;
-
-    while ((match = regex.exec(input)) !== null) {
-        if (match.index > last) {
-            segments.push({ plain: input.slice(last, match.index) });
-        }
-        segments.push({ kanji: match[1], kana: match[2] });
-        last = match.index + match[0].length;
-    }
-    if (last < input.length) {
-        segments.push({ plain: input.slice(last) });
-    }
-    return segments;
-}
-
+/**
+ * FuriganaText — renders Jotoba bracket-format furigana as semantic HTML ruby.
+ *
+ * WHY: Jotoba's bracket format (e.g. [異世界|い|せ|かい]) cannot be rendered
+ * safely by splitting on "|". parseFurigana() correctly zips individual kanji
+ * characters with their kana readings before building <ruby> elements.
+ */
 export function FuriganaText({ furigana, className }: Props) {
-    const segments = parseFurigana(furigana);
+    const tokens = parseFurigana(furigana);
+
+    if (tokens.length === 0) return null;
+
     return (
         <span className={className}>
-            {segments.map((seg, i) =>
-                "kanji" in seg ? (
-                    <ruby key={i}>
-                        {seg.kanji}
-                        <rt className="text-[0.55em] text-gray-400 font-normal">
-                            {seg.kana}
+            {tokens.map((token, i) =>
+                token.type === "ruby" ? (
+                    <ruby key={i} className="ruby-text">
+                        {token.kanji}
+                        <rt className="text-[0.45em] text-gray-500 font-normal">
+                            {token.kana}
                         </rt>
                     </ruby>
                 ) : (
-                    <span key={i}>{seg.plain}</span>
+                    <span key={i}>{token.text}</span>
                 ),
             )}
         </span>
     );
-}
-
-/** Strip furigana brackets, returning kanji form only: "[走|はし]る" → "走る" */
-export function stripToKanji(furigana: string): string {
-    return furigana.replace(/\[([^\|]+)\|[^\]]+\]/g, "$1");
-}
-
-/** Extract kana reading only: "[走|はし]る" → "はしる" */
-export function stripToKana(furigana: string): string {
-    return furigana.replace(/\[([^\|]*)\|([^\]]*)\]/g, "$2");
 }

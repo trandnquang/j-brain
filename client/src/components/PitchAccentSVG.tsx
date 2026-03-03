@@ -5,87 +5,60 @@ interface Props {
     className?: string;
 }
 
-const DOT_RADIUS = 6;
-const DOT_CY_HIGH = 12;
-const DOT_CY_LOW = 32;
-const MORA_WIDTH = 36;
-const SVG_HEIGHT = 52; // text sits below the dots
-
 /**
- * PitchAccentSVG — renders a connected-dot pitch accent diagram.
+ * PitchAccentSVG — renders a step-line pitch accent diagram using CSS borders.
  *
- * Spec constraints:
- * - Text below the line MUST be kana only (guaranteed by backend PitchDTO.part)
- * - Dots connect with lines showing high→low drops and low→high rises
- * - High dots: filled blue circle at top rail
- * - Low dots: filled gray circle at bottom rail
- * - Drop line: dashed vertical segment between last high mora and first low mora
+ * WHY: A CSS border approach is more accessible and less fragile than SVG paths.
+ * Each mora maps to a <span> whose top/bottom border represents its pitch height.
+ * A right border is added at pitch transition points (high→low drop, or low→high rise).
+ *
+ * Pattern: Japanese pitch accent always starts LOW at mora 0 unless noted otherwise.
+ *
+ * Standard patterns:
+ *   [↓さ][↑し↑み↑]     = Heiban (flat, no drop)
+ *   [↓さ]↓[↑し]↑[みず] = LHL rise at mora 1
  */
-export function PitchAccentSVG({ pitch, className }: Props) {
+export function PitchAccentSVG({ pitch, className = "" }: Props) {
     if (!pitch || pitch.length === 0) return null;
 
-    const svgWidth = pitch.length * MORA_WIDTH + 16;
-
-    // Build coordinate list
-    const coords = pitch.map((p, i) => ({
-        cx: 16 + i * MORA_WIDTH,
-        cy: p.high ? DOT_CY_HIGH : DOT_CY_LOW,
-        high: p.high,
-        part: p.part,
-    }));
-
     return (
-        <svg
-            width={svgWidth}
-            height={SVG_HEIGHT}
-            className={className}
-            aria-label="Pitch accent diagram"
+        <div
+            className={`flex items-stretch gap-0 ${className}`}
+            aria-label="Pitch accent"
         >
-            {/* Connection lines */}
-            {coords.slice(0, -1).map((c, i) => {
-                const next = coords[i + 1];
-                const isDrop = c.high && !next.high;
+            {pitch.map((mora, i) => {
+                if (!mora.part) return null; // empty trailing marker
+                const next = pitch[i + 1];
+                const isHigh = mora.high;
+                // Add right connector when there is a pitch transition to the next mora
+                const hasDropRight =
+                    isHigh && next && !next.high && !!next.part;
+                const hasRiseRight =
+                    !isHigh && next && next.high && !!next.part;
+
                 return (
-                    <line
-                        key={`line-${i}`}
-                        x1={c.cx}
-                        y1={c.cy}
-                        x2={next.cx}
-                        y2={next.cy}
-                        stroke={isDrop ? "#3b82f6" : "#9ca3af"}
-                        strokeWidth={isDrop ? 2.5 : 2}
-                        strokeDasharray={isDrop ? "4 2" : undefined}
-                    />
+                    <span
+                        key={i}
+                        className={[
+                            "inline-flex items-center px-[3px] text-sm font-medium text-gray-700",
+                            // TOP or BOTTOM border indicates pitch height
+                            isHigh
+                                ? "border-t-2 border-gray-700"
+                                : "border-b-2 border-gray-400",
+                            // RIGHT border = transition connector
+                            hasDropRight
+                                ? "border-r-2 border-r-gray-700"
+                                : hasRiseRight
+                                  ? "border-r-2 border-r-gray-400"
+                                  : "",
+                        ]
+                            .filter(Boolean)
+                            .join(" ")}
+                    >
+                        {mora.part}
+                    </span>
                 );
             })}
-
-            {/* Dots */}
-            {coords.map((c, i) => (
-                <circle
-                    key={`dot-${i}`}
-                    cx={c.cx}
-                    cy={c.cy}
-                    r={DOT_RADIUS}
-                    fill={c.high ? "#3b82f6" : "#d1d5db"}
-                    stroke={c.high ? "#2563eb" : "#9ca3af"}
-                    strokeWidth={1.5}
-                />
-            ))}
-
-            {/* Kana labels below dots */}
-            {coords.map((c, i) => (
-                <text
-                    key={`label-${i}`}
-                    x={c.cx}
-                    y={SVG_HEIGHT - 4}
-                    textAnchor="middle"
-                    fontSize="11"
-                    fontFamily="inherit"
-                    fill="#6b7280"
-                >
-                    {c.part}
-                </text>
-            ))}
-        </svg>
+        </div>
     );
 }

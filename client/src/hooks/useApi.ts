@@ -6,16 +6,25 @@ import type {
     SubmitReviewRequest,
 } from "../types/api";
 
-// ── AI — on-demand example generation (Phase 3B) ─────────────────────────────
-export function useGenerateExamples() {
-    return useMutation({
-        mutationFn: ({
-            keyword,
-            meanings,
-        }: {
-            keyword: string;
-            meanings: string[];
-        }) => ai.generateExamples(keyword, meanings),
+// ── AI — on-demand example generation (Phase 3B, Item 2) ─────────────────────
+/**
+ * useAiExamples — caches AI-generated examples per word keyword.
+ * WHY: useQuery + staleTime:Infinity means reopening the same word returns
+ * cached examples instantly without a second LM Studio call.
+ */
+export function useAiExamples(
+    keyword: string | null,
+    meanings: string[],
+    enabled: boolean,
+) {
+    return useQuery({
+        queryKey: ["ai-examples", keyword],
+        queryFn: () =>
+            ai.generateExamples(keyword!, meanings).then((r) => r ?? []),
+        enabled: enabled && !!keyword,
+        staleTime: Infinity,
+        gcTime: Infinity,
+        retry: false,
     });
 }
 

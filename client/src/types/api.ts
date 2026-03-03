@@ -36,6 +36,9 @@ export interface SenseDTO {
     glosses: string[];
     pos: string[]; // backend-flattened POS labels
     misc: string[]; // usage notes e.g. "Usually written in kana"
+    field?: string; // domain restriction e.g. "Buddhism", "Sumo"
+    xref?: string; // cross-reference word e.g. "同性"
+    information?: string; // contextual note e.g. "original meaning"
 }
 export interface PitchDTO {
     part: string;
@@ -124,6 +127,8 @@ export interface CreateFlashcardRequest {
     chinese?: string[];
     koreanR?: string[];
     koreanH?: string[];
+    /** AI examples already generated — passed through to skip a second LLM call */
+    preGeneratedExamples?: ExampleResponse[];
 }
 
 // ---- REVIEW ----

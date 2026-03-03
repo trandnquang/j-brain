@@ -1,21 +1,20 @@
 import { X, Volume2, Plus, Loader2, Sparkles, BookOpen } from "lucide-react";
-import { useState, useEffect } from "react";
-import {
-    useDecks,
-    useCreateFlashcard,
-    useGenerateExamples,
-} from "../hooks/useApi";
+import { useDecks, useCreateFlashcard, useAiExamples } from "../hooks/useApi";
 import { Button } from "./ui/button";
 import { FuriganaText } from "./FuriganaText";
 import { PitchAccentSVG } from "./PitchAccentSVG";
+import { SenseRow } from "./SenseRow";
+import { KanjiPill } from "./KanjiPill";
+import { useState } from "react";
 import type { WordResultDTO, ExampleResponse } from "../types/api";
 
 interface Props {
     result: WordResultDTO | null;
     onClose: () => void;
+    /** Called when user clicks a kanji component pill or an xref link */
+    onNavigate?: (keyword: string, mode?: "words" | "kanji") => void;
 }
 
-// Style display config: colour + label for each context style
 const STYLE_CONFIG: Record<
     string,
     { label: string; accent: string; dot: string }
@@ -38,46 +37,35 @@ const STYLE_CONFIG: Record<
 };
 
 /**
- * WordDetailDrawer — slide-in right panel with full word details and AI examples.
+ * WordDetailDrawer — slide-in right panel with full word detail and AI examples.
  *
- * Phase 3B: On drawer open, fires the non-persisting AI generation endpoint
- * immediately. Examples are shown inline. On "Add to Deck", examples are sent
- * in the flashcard request body and persisted atomically — no second AI call.
+ * Phase 3B/Refactor:
+ * - AI examples via useAiExamples (useQuery, staleTime:Infinity) — no re-fire on remount
+ * - SenseRow renders each sense with contextual tags (field, xref, information, misc)
+ * - KanjiPill → onNavigate for clickable kanji navigation
+ * - Duplicate kana header removed
  */
-export function WordDetailDrawer({ result, onClose }: Props) {
+export function WordDetailDrawer({ result, onClose, onNavigate }: Props) {
     const { data: deckList } = useDecks();
     const createFlashcard = useCreateFlashcard();
-    const generateExamples = useGenerateExamples();
 
     const [selectedDeckId, setSelectedDeckId] = useState("");
     const [saved, setSaved] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [examples, setExamples] = useState<ExampleResponse[]>([]);
 
-    // Reset state every time a new word is opened
-    useEffect(() => {
-        if (!result) return;
-        setSaved(false);
-        setSaving(false);
-        setError(null);
-        setExamples([]);
-        setSelectedDeckId("");
-
-        // Trigger AI generation immediately on open (spec: only fires on detail view)
-        const meanings = result.senses.flatMap((s) => s.glosses);
-        generateExamples.mutate(
-            { keyword: result.keyword ?? result.kana, meanings },
-            {
-                onSuccess: (data) => {
-                    if (data) setExamples(data);
-                },
-            },
-        );
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [result?.kana]);
+    // ── AI examples via useQuery (cached per keyword, no re-fire on remount) ───
+    const meanings = result?.senses.flatMap((s) => s.glosses) ?? [];
+    const keyword = result?.keyword ?? result?.kana ?? null;
+    const { data: examples = [], isFetching: isGenerating } = useAiExamples(
+        keyword,
+        meanings,
+        !!result, // only enabled when a word is open
+    );
 
     if (!result) return null;
+
+    const displayKeyword = result.keyword ?? result.kana;
 
     const playAudio = () => {
         if (!result.audioUrl) return;
@@ -94,15 +82,13 @@ export function WordDetailDrawer({ result, onClose }: Props) {
         setError(null);
         setSaving(true);
         try {
-            const meanings = result.senses.flatMap((s) => s.glosses);
             const partOfSpeech = [
                 ...new Set(result.senses.flatMap((s) => s.pos)),
             ];
-
             await createFlashcard.mutateAsync({
                 deckId: selectedDeckId,
                 cardType: "WORD",
-                keyword: result.keyword ?? result.kana,
+                keyword: displayKeyword,
                 kana: result.kana,
                 furigana: result.furigana ?? undefined,
                 common: result.common,
@@ -115,9 +101,10 @@ export function WordDetailDrawer({ result, onClose }: Props) {
                         : undefined,
                 audioUrl: result.audioUrl ?? undefined,
                 kanjiComponents: result.kanjiComponents,
-                // Pass pre-generated examples → backend saves inline, no second AI call
                 preGeneratedExamples:
-                    examples.length > 0 ? examples : undefined,
+                    examples.length > 0
+                        ? (examples as ExampleResponse[])
+                        : undefined,
             });
             setSaved(true);
         } catch (e: unknown) {
@@ -126,9 +113,6 @@ export function WordDetailDrawer({ result, onClose }: Props) {
             setSaving(false);
         }
     };
-
-    const displayKeyword = result.keyword ?? result.kana;
-    const isGenerating = generateExamples.isPending;
 
     return (
         <>
@@ -156,11 +140,7 @@ export function WordDetailDrawer({ result, onClose }: Props) {
                                 {displayKeyword}
                             </h2>
                         )}
-                        {result.keyword && (
-                            <p className="text-gray-400 mt-0.5">
-                                {result.kana}
-                            </p>
-                        )}
+                        {/* Item 4: removed duplicate kana <p> — kana is already in the ruby above */}
                     </div>
                     <div className="flex items-center gap-2 pt-1">
                         {result.audioUrl && (
@@ -183,7 +163,6 @@ export function WordDetailDrawer({ result, onClose }: Props) {
 
                 {/* ── Body ── */}
                 <div className="flex-1 px-6 py-6 space-y-7">
-                    {/* Common badge */}
                     {result.common && (
                         <div className="inline-flex items-center gap-1.5 text-sm text-emerald-700">
                             <span
@@ -196,45 +175,26 @@ export function WordDetailDrawer({ result, onClose }: Props) {
                         </div>
                     )}
 
-                    {/* ── Senses ── */}
+                    {/* ── Senses (Item 4 / 7 / 8) ── */}
                     <section>
                         <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-3 flex items-center gap-1.5">
                             <BookOpen className="w-3.5 h-3.5" /> Meanings
                         </h3>
                         <ol className="space-y-3">
                             {result.senses.map((sense, i) => (
-                                <li key={i} className="flex gap-3">
-                                    <span className="text-gray-300 font-mono text-sm min-w-[1.2rem] pt-0.5">
-                                        {i + 1}.
-                                    </span>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-gray-800">
-                                            {sense.glosses.join(", ")}
-                                        </p>
-                                        {sense.misc.length > 0 && (
-                                            <div className="flex flex-wrap gap-1 mt-1">
-                                                {sense.misc.map((m) => (
-                                                    <span
-                                                        key={m}
-                                                        className="px-1.5 py-0.5 text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded"
-                                                    >
-                                                        {m}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                    {sense.pos.length > 0 && (
-                                        <span className="text-[11px] text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded shrink-0 text-right leading-snug">
-                                            {sense.pos[0]}
-                                        </span>
-                                    )}
-                                </li>
+                                <SenseRow
+                                    key={i}
+                                    sense={sense}
+                                    index={i}
+                                    onXrefClick={(xref) =>
+                                        onNavigate?.(xref, "words")
+                                    }
+                                />
                             ))}
                         </ol>
                     </section>
 
-                    {/* ── Pitch accent ── */}
+                    {/* ── Pitch accent (Item 5) ── */}
                     {result.pitch.length > 0 && (
                         <section>
                             <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-3">
@@ -244,7 +204,7 @@ export function WordDetailDrawer({ result, onClose }: Props) {
                         </section>
                     )}
 
-                    {/* ── Kanji components ── */}
+                    {/* ── Kanji components (Item 7 — KanjiPill) ── */}
                     {result.kanjiComponents.length > 0 && (
                         <section>
                             <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-2">
@@ -252,18 +212,19 @@ export function WordDetailDrawer({ result, onClose }: Props) {
                             </h3>
                             <div className="flex flex-wrap gap-2">
                                 {result.kanjiComponents.map((c) => (
-                                    <span
+                                    <KanjiPill
                                         key={c}
-                                        className="px-3 py-1.5 text-xl font-bold bg-gray-50 border border-gray-200 rounded-lg"
-                                    >
-                                        {c}
-                                    </span>
+                                        char={c}
+                                        onSelect={(char) =>
+                                            onNavigate?.(char, "kanji")
+                                        }
+                                    />
                                 ))}
                             </div>
                         </section>
                     )}
 
-                    {/* ── AI Examples (Phase 3B) ── */}
+                    {/* ── AI Examples (Item 2 — cached via useQuery) ── */}
                     <section>
                         <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-3 flex items-center gap-1.5">
                             <Sparkles className="w-3.5 h-3.5" />
@@ -280,21 +241,20 @@ export function WordDetailDrawer({ result, onClose }: Props) {
                                     Generating Keigo · Daily · Anime examples…
                                 </p>
                                 <p className="text-xs mt-1">
-                                    This takes 5–30 s with a local LLM
+                                    First open takes 5–30 s with a local LLM
                                 </p>
                             </div>
                         )}
 
                         {!isGenerating && examples.length === 0 && (
                             <div className="border border-dashed border-gray-200 rounded-xl px-4 py-6 text-center text-gray-400 text-sm">
-                                {generateExamples.isError
-                                    ? "⚠ LM Studio is not reachable. Start LM Studio to generate examples."
-                                    : "No examples returned. Check that LM Studio is running."}
+                                ⚠ LM Studio not reachable — start LM Studio to
+                                generate examples.
                             </div>
                         )}
 
                         <div className="space-y-3">
-                            {examples.map((ex) => {
+                            {(examples as ExampleResponse[]).map((ex) => {
                                 const cfg =
                                     STYLE_CONFIG[ex.contextStyle] ??
                                     STYLE_CONFIG.Daily;
@@ -303,7 +263,6 @@ export function WordDetailDrawer({ result, onClose }: Props) {
                                         key={ex.contextStyle}
                                         className={`rounded-xl border px-4 py-3 ${cfg.accent}`}
                                     >
-                                        {/* Style label */}
                                         <div className="flex items-center gap-1.5 mb-2">
                                             <span
                                                 className={`w-2 h-2 rounded-full ${cfg.dot}`}
@@ -312,7 +271,6 @@ export function WordDetailDrawer({ result, onClose }: Props) {
                                                 {cfg.label}
                                             </span>
                                         </div>
-                                        {/* Japanese sentence */}
                                         <p className="text-base font-medium leading-relaxed mb-1">
                                             {ex.furiganaSentence ? (
                                                 <FuriganaText
@@ -324,7 +282,6 @@ export function WordDetailDrawer({ result, onClose }: Props) {
                                                 ex.japaneseSentence
                                             )}
                                         </p>
-                                        {/* Vietnamese translation */}
                                         <p className="text-sm text-gray-500">
                                             {ex.vietnameseTranslation}
                                         </p>
