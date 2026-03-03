@@ -1,6 +1,6 @@
 package com.trandnquang.j_brain.controller;
 
-import com.trandnquang.j_brain.dto.response.SearchResultDTO;
+import com.trandnquang.j_brain.dto.response.WordResultDTO;
 import com.trandnquang.j_brain.service.JotobaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -15,37 +15,31 @@ import reactor.core.publisher.Mono;
 import java.util.List;
 
 /**
- * Swagger-annotated façade for the Jotoba dictionary API.
+ * Swagger-annotated façade for the Jotoba word search endpoint.
  *
  * <p>
- * WHY: Separates OpenAPI documentation concerns (Swagger tags, security
- * requirement annotations) from the core {@link SearchController}, keeping
- * the primary controller clean. Both controllers delegate to the same
- * {@link JotobaService} — no business logic lives here.
+ * WHY: Keeps the primary {@link SearchController} clean by separating
+ * OpenAPI documentation annotations that also require
+ * {@code @SecurityRequirement}.
+ * Phase 2: Updated return type to {@link WordResultDTO}.
  */
 @RestController
 @RequestMapping("/api/v1/dictionary")
 @RequiredArgsConstructor
 @Validated
-@Tag(name = "Dictionary", description = "Proxy external calls to Jotoba Dictionary API")
+@Tag(name = "Dictionary", description = "Swagger-annotated proxy for Jotoba word search")
 public class DictionaryController {
 
     private final JotobaService jotobaService;
 
-    /**
-     * Non-blocking word search endpoint returning typed DTOs.
-     *
-     * @param keyword Any Japanese (Kana/Kanji/Romaji) or English search term.
-     * @return {@code 200} with results list, {@code 204} if nothing found.
-     */
     @GetMapping("/search")
     @Operation(summary = "Search for a Japanese word via Jotoba", security = @SecurityRequirement(name = "bearerAuth"))
-    public Mono<ResponseEntity<List<SearchResultDTO>>> searchDictionary(
+    public Mono<ResponseEntity<List<WordResultDTO>>> searchDictionary(
             @RequestParam @NotBlank String keyword) {
 
         return jotobaService.searchWords(keyword)
-                .map(results -> results.isEmpty()
-                        ? ResponseEntity.<List<SearchResultDTO>>noContent().build()
-                        : ResponseEntity.ok(results));
+                .map(resp -> resp.words().isEmpty()
+                        ? ResponseEntity.<List<WordResultDTO>>noContent().build()
+                        : ResponseEntity.ok(resp.words()));
     }
 }

@@ -1,5 +1,5 @@
 // ============================================================
-// J-BRAIN API TYPES — 100% aligned with backend DTOs
+// J-BRAIN API TYPES — Phase 2, aligned with all backend DTOs
 // ============================================================
 
 // ---- AUTH ----
@@ -9,12 +9,10 @@ export interface AuthResponse {
     username: string;
     email: string;
 }
-
 export interface LoginRequest {
     email: string;
     password: string;
 }
-
 export interface RegisterRequest {
     username: string;
     email: string;
@@ -28,27 +26,61 @@ export interface DeckResponse {
     description: string | null;
     createdAt: string;
 }
-
 export interface CreateDeckRequest {
     name: string;
     description?: string;
 }
 
-// ---- SEARCH ----
-export interface SearchResultDTO {
-    cardType: "WORD" | "KANJI";
-    keyword: string;
-    furigana: string | null;
-    meanings: string[];
-    // WORD fields
-    partOfSpeech: string[] | null;
-    pitchAccentData: { part: string; high: boolean }[] | null;
+// ---- SEARCH — Phase 2 ----
+export interface SenseDTO {
+    glosses: string[];
+    pos: string[]; // backend-flattened POS labels
+    misc: string[]; // usage notes e.g. "Usually written in kana"
+}
+export interface PitchDTO {
+    part: string;
+    high: boolean;
+} // kana mora, guaranteed kana-only
+
+export interface WordResultDTO {
+    keyword: string | null; // kanji form; null for kana-only words
+    kana: string;
+    furigana: string | null; // bracket format [走|はし]る
+    common: boolean;
+    senses: SenseDTO[];
+    pitch: PitchDTO[];
     audioUrl: string | null;
-    // KANJI fields
-    strokeCount: number | null;
+    kanjiComponents: string[];
+}
+
+export interface KanjiResultDTO {
+    literal: string;
+    meanings: string[];
+    onyomi: string[];
+    kunyomi: string[];
+    strokeCount: number;
     jlptLevel: number | null;
-    onyomi: string[] | null;
-    kunyomi: string[] | null;
+    grade: number | null;
+    radical: string | null;
+    parts: string[];
+    similar: string[];
+    chinese: string[];
+    koreanRomaji: string[];
+    koreanHangul: string[];
+}
+
+export interface SentenceDTO {
+    id: number;
+    japanese: string;
+    furigana: string | null;
+    english: string;
+}
+
+export interface NameResultDTO {
+    kanji: string | null;
+    kana: string;
+    transcription: string;
+    nameType: string[];
 }
 
 // ---- FLASHCARD ----
@@ -74,15 +106,24 @@ export interface CreateFlashcardRequest {
     deckId: string;
     cardType: "WORD" | "KANJI";
     keyword: string;
+    kana?: string;
     furigana?: string;
+    common?: boolean;
+    serializedSenses?: string; // JSON string of SenseDTO[]
     meanings: string[];
     partOfSpeech?: string[];
-    pitchAccentData?: { part: string; high: boolean }[];
+    serializedPitchAccent?: string; // JSON string of PitchDTO[]
     audioUrl?: string;
+    kanjiComponents?: string[];
     strokeCount?: number;
     jlptLevel?: number;
     onyomi?: string[];
     kunyomi?: string[];
+    grade?: number;
+    radical?: string;
+    chinese?: string[];
+    koreanR?: string[];
+    koreanH?: string[];
 }
 
 // ---- REVIEW ----
@@ -95,12 +136,10 @@ export interface ReviewCardResponse {
     audioUrl: string | null;
     examples: ExampleResponse[];
 }
-
 export interface SubmitReviewRequest {
     flashcardId: string;
-    grade: 1 | 2 | 3 | 4; // 1=Again 2=Hard 3=Good 4=Easy
+    grade: 1 | 2 | 3 | 4;
 }
-
 export interface ReviewResultResponse {
     flashcardId: string;
     newIntervalDays: number;

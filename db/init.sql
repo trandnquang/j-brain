@@ -1,7 +1,7 @@
 -- ============================================================================
--- J-BRAIN DATABASE SCHEMA v2.0
+-- J-BRAIN DATABASE SCHEMA v3.0
 -- Engine: PostgreSQL 16 + pgvector
--- Description: Full schema for AI-Powered Japanese SRS (Spaced Repetition System)
+-- Phase 2: Additive migration — 9 new columns on flashcards, nothing removed
 -- ============================================================================
 
 -- Enable pgvector for future semantic search capabilities (milestone 2.0+)
@@ -9,7 +9,6 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ============================================================================
 -- TABLE 1: users
--- Core identity table. Managed by the application layer (Spring Security).
 -- ============================================================================
 CREATE TABLE users (
     id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -22,8 +21,6 @@ CREATE TABLE users (
 
 -- ============================================================================
 -- TABLE 2: decks
--- A Deck is a named collection of Flashcards owned by a User.
--- Constraint: A user cannot have two decks with the same name.
 -- ============================================================================
 CREATE TABLE decks (
     id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -37,130 +34,123 @@ CREATE TABLE decks (
 
 -- ============================================================================
 -- TABLE 3: flashcards
--- Polymorphic core card entity supporting both WORD and KANJI card types.
--- SM-2 algorithm state is stored directly on this record and mutated on review.
+-- Polymorphic: supports WORD and KANJI card_types.
+-- v3.0 Phase 2 additions: kana, common, senses, kanji_components, radical,
+--   grade, chinese, korean_r, korean_h
 -- ============================================================================
 CREATE TABLE flashcards (
     id           UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     deck_id      UUID         NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
 
-    -- Card classification: 'WORD' (vocabulary) | 'KANJI' (single character)
     card_type    VARCHAR(20)  NOT NULL DEFAULT 'WORD'
                      CHECK (card_type IN ('WORD', 'KANJI')),
 
     -- -------------------------------------------------------------------------
-    -- JOTOBA CORE DATA (shared by both WORD and KANJI types)
+    -- CORE WORD / KANJI IDENTITY
     -- -------------------------------------------------------------------------
-    -- The primary search term returned by Jotoba (kanji/kana for words, literal for kanji)
+    -- Primary search term: kanji form for words, literal for kanji cards
     keyword      TEXT         NOT NULL,
-    -- Jotoba furigana format, e.g. "[走|はし]る"
+    -- [Phase 2] Pure kana reading, always populated (e.g. "はしる" for 走る)
+    kana         TEXT,
+    -- Jotoba bracket furigana format, e.g. "[走|はし]る"
     furigana     TEXT,
-    -- Array of English glosses from Jotoba senses[].glosses
+    -- [Phase 2] True if the word appears in Jotoba's common vocabulary lists
+    common       BOOLEAN      NOT NULL DEFAULT false,
+
+    -- -------------------------------------------------------------------------
+    -- FLAT MEANINGS — kept for SM-2 review display, populated from senses[0]
+    -- -------------------------------------------------------------------------
     meanings     TEXT[]       NOT NULL,
 
     -- -------------------------------------------------------------------------
-    -- WORD-SPECIFIC DATA (populated when card_type = 'WORD')
+    -- [Phase 2] STRUCTURED SENSES — full JSON from Jotoba for detail view
+    -- Schema: [{ glosses: string[], pos: string[], misc: string[] }]
     -- -------------------------------------------------------------------------
-    -- Array of part-of-speech tags from Jotoba senses[].pos
-    part_of_speech   TEXT[],
-    -- Raw pitch accent array from Jotoba, stored as JSONB for flexible querying
-    pitch_accent_data JSONB,
-    -- Relative URL path to the Jotoba .ogg audio file
-    audio_url        VARCHAR(500),
+    senses       JSONB,
 
     -- -------------------------------------------------------------------------
-    -- KANJI-SPECIFIC DATA (populated when card_type = 'KANJI')
+    -- WORD-SPECIFIC DATA
+    -- -------------------------------------------------------------------------
+    part_of_speech    TEXT[],
+    pitch_accent_data JSONB,
+    audio_url         VARCHAR(500),
+    -- [Phase 2] Kanji chars extracted from the keyword, e.g. ["有","難"] for 有難う
+    kanji_components  TEXT[],
+
+    -- -------------------------------------------------------------------------
+    -- KANJI-SPECIFIC DATA
     -- -------------------------------------------------------------------------
     stroke_count INT,
     jlpt_level   INT CHECK (jlpt_level BETWEEN 1 AND 5),
     onyomi       TEXT[],
     kunyomi      TEXT[],
+    -- [Phase 2] School grade the kanji is taught in (Joyo grade 1–8)
+    grade        INT,
+    -- [Phase 2] The main radical for this kanji (single character)
+    radical      TEXT,
+    -- [Phase 2] Chinese pinyin readings, e.g. ["zou3"]
+    chinese      TEXT[],
+    -- [Phase 2] Korean readings in Romaji (McCune-Reischauer), e.g. ["ju"]
+    korean_r     TEXT[],
+    -- [Phase 2] Korean readings in Hangul, e.g. ["주"]
+    korean_h     TEXT[],
 
     -- -------------------------------------------------------------------------
-    -- SM-2 ALGORITHM STATE (ICPC Level Logic)
-    -- Reference: https://www.supermemo.com/en/archives1990-2015/english/ol/sm2
+    -- SM-2 ALGORITHM STATE
     -- -------------------------------------------------------------------------
-    -- Number of times this card has been successfully reviewed consecutively
     repetition       INT              NOT NULL DEFAULT 0,
-    -- Current interval until next review (in days)
     interval_days    INT              NOT NULL DEFAULT 0,
-    -- Ease factor: controls how quickly the interval grows. Min value: 1.30
     ease_factor      DOUBLE PRECISION NOT NULL DEFAULT 2.50,
-    -- Absolute timestamp of the next scheduled review
     next_review_date TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
-    -- Card lifecycle state: LEARNING -> REVIEW -> GRADUATED
     status           VARCHAR(20)      NOT NULL DEFAULT 'LEARNING'
                          CHECK (status IN ('LEARNING', 'REVIEW', 'GRADUATED')),
 
     created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
 
-    -- Business rule: a deck cannot contain two cards for the same keyword
     CONSTRAINT uq_keyword_per_deck UNIQUE (deck_id, keyword)
 );
 
 -- ============================================================================
 -- TABLE 4: flashcard_examples
--- AI-generated or Jotoba-native example sentences linked to a flashcard.
--- Each flashcard should have exactly 3 AI rows (Keigo, Daily, Anime).
+-- AI-generated example sentences (Keigo, Daily, Anime) per flashcard
 -- ============================================================================
 CREATE TABLE flashcard_examples (
     id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     flashcard_id         UUID        NOT NULL REFERENCES flashcards(id) ON DELETE CASCADE,
-
-    -- Source style tag: 'Keigo' | 'Daily' | 'Anime' | 'Jotoba_Native'
     context_style        VARCHAR(50) NOT NULL,
-    -- Original Japanese sentence text
     japanese_sentence    TEXT        NOT NULL,
-    -- Sentence with inline furigana annotations
     furigana_sentence    TEXT,
-    -- Vietnamese translation generated by Llama 3
     vietnamese_translation TEXT      NOT NULL,
-
     created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ============================================================================
--- TABLE 5: review_logs
--- Immutable audit trail of every review event. Never deleted or updated.
--- Used for analytics, replay, and debugging SM-2 regressions.
+-- TABLE 5: review_logs — immutable SM-2 audit trail
 -- ============================================================================
 CREATE TABLE review_logs (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     flashcard_id   UUID NOT NULL REFERENCES flashcards(id) ON DELETE CASCADE,
-
-    -- User's self-reported quality of recall: 1=Again, 2=Hard, 3=Good, 4=Easy
     grade          INT  NOT NULL CHECK (grade BETWEEN 1 AND 4),
-
-    -- SM-2 state snapshot before and after applying the algorithm
     previous_interval  INT,
     new_interval       INT,
     previous_ease      DOUBLE PRECISION,
     new_ease           DOUBLE PRECISION,
-
     reviewed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ============================================================================
--- INDEXES FOR QUERY PERFORMANCE
+-- INDEXES
 -- ============================================================================
 
--- Critical: Drives the "due today" SRS query. Partial index filters to relevant rows only.
+-- Drives "due today" SRS query — partial index filters to relevant rows only
 CREATE INDEX idx_flashcards_due_date
     ON flashcards (deck_id, next_review_date)
     WHERE next_review_date <= NOW();
 
--- Drives user -> deck -> card loading chain
-CREATE INDEX idx_decks_user_id
-    ON decks (user_id);
+CREATE INDEX idx_decks_user_id     ON decks (user_id);
+CREATE INDEX idx_examples_flashcard_id ON flashcard_examples (flashcard_id);
+CREATE INDEX idx_reviews_flashcard_id  ON review_logs (flashcard_id);
 
--- Drives card detail page (load all examples for a card)
-CREATE INDEX idx_examples_flashcard_id
-    ON flashcard_examples (flashcard_id);
-
--- Drives review history page and analytics queries
-CREATE INDEX idx_reviews_flashcard_id
-    ON review_logs (flashcard_id);
-
--- GIN index for JSONB pitch accent data (enables future JSON path queries)
-CREATE INDEX idx_flashcards_pitch_jsonb
-    ON flashcards USING GIN (pitch_accent_data);
+-- GIN index for JSONB pitch accent and structured senses queries
+CREATE INDEX idx_flashcards_pitch_jsonb  ON flashcards USING GIN (pitch_accent_data);
+CREATE INDEX idx_flashcards_senses_jsonb ON flashcards USING GIN (senses);

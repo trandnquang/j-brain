@@ -1,40 +1,68 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { search, decks, flashcards, reviews } from "../lib/api";
+import { search, decks, flashcards, reviews, ai } from "../lib/api";
 import type {
     CreateDeckRequest,
     CreateFlashcardRequest,
     SubmitReviewRequest,
 } from "../types/api";
 
-// ============================================================
-// SEARCH HOOKS
-// ============================================================
+// ── AI — on-demand example generation (Phase 3B) ─────────────────────────────
+export function useGenerateExamples() {
+    return useMutation({
+        mutationFn: ({
+            keyword,
+            meanings,
+        }: {
+            keyword: string;
+            meanings: string[];
+        }) => ai.generateExamples(keyword, meanings),
+    });
+}
 
-/**
- * useWordSearch — Fetches word results from Jotoba lazily (enabled only when a keyword is provided).
- */
+// ── Word search (debounced via enabled flag) ───────────────────────────────────
 export function useWordSearch(keyword: string) {
     return useQuery({
         queryKey: ["search", "words", keyword],
         queryFn: () => search.words(keyword),
         enabled: keyword.trim().length > 0,
-        staleTime: 10 * 60 * 1000, // Jotoba responses are stable — 10 min cache
+        staleTime: 10 * 60 * 1000,
     });
 }
 
-// ============================================================
-// DECK HOOKS
-// ============================================================
-
-/** useDecks — Fetches all decks belonging to the authenticated user. */
-export function useDecks() {
+// ── Kanji search ───────────────────────────────────────────────────────────────
+export function useKanjiSearch(keyword: string) {
     return useQuery({
-        queryKey: ["decks"],
-        queryFn: decks.list,
+        queryKey: ["search", "kanji", keyword],
+        queryFn: () => search.kanji(keyword),
+        enabled: keyword.trim().length > 0,
+        staleTime: 10 * 60 * 1000,
     });
 }
 
-/** useCreateDeck — Mutation to create a new deck; invalidates the deck list on success. */
+// ── Sentence search ────────────────────────────────────────────────────────────
+export function useSentenceSearch(keyword: string) {
+    return useQuery({
+        queryKey: ["search", "sentences", keyword],
+        queryFn: () => search.sentences(keyword),
+        enabled: keyword.trim().length > 0,
+        staleTime: 10 * 60 * 1000,
+    });
+}
+
+// ── Name search ────────────────────────────────────────────────────────────────
+export function useNameSearch(keyword: string) {
+    return useQuery({
+        queryKey: ["search", "names", keyword],
+        queryFn: () => search.names(keyword),
+        enabled: keyword.trim().length > 0,
+        staleTime: 10 * 60 * 1000,
+    });
+}
+
+// ── Decks ──────────────────────────────────────────────────────────────────────
+export function useDecks() {
+    return useQuery({ queryKey: ["decks"], queryFn: decks.list });
+}
 export function useCreateDeck() {
     const qc = useQueryClient();
     return useMutation({
@@ -43,11 +71,7 @@ export function useCreateDeck() {
     });
 }
 
-// ============================================================
-// FLASHCARD HOOKS
-// ============================================================
-
-/** useFlashcards — Fetches all flashcards for a given deck. */
+// ── Flashcards ─────────────────────────────────────────────────────────────────
 export function useFlashcards(deckId: string | null) {
     return useQuery({
         queryKey: ["flashcards", deckId],
@@ -55,8 +79,6 @@ export function useFlashcards(deckId: string | null) {
         enabled: !!deckId,
     });
 }
-
-/** useCreateFlashcard — Mutation to save a flashcard (202 Accepted — AI runs async). */
 export function useCreateFlashcard() {
     const qc = useQueryClient();
     return useMutation({
@@ -66,22 +88,15 @@ export function useCreateFlashcard() {
     });
 }
 
-// ============================================================
-// REVIEW HOOKS
-// ============================================================
-
-/** useDueCards — Fetches cards due for review in a deck today. */
+// ── Reviews ────────────────────────────────────────────────────────────────────
 export function useDueCards(deckId: string | null) {
     return useQuery({
         queryKey: ["reviews", "due", deckId],
         queryFn: () => reviews.due(deckId!),
         enabled: !!deckId,
-        // Refresh every 30s so newly-added cards appear without a reload
         refetchInterval: 30_000,
     });
 }
-
-/** useSubmitReview — Mutation to submit a grade; invalidates the due-cards list. */
 export function useSubmitReview(deckId: string) {
     const qc = useQueryClient();
     return useMutation({

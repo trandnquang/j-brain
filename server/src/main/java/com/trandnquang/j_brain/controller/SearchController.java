@@ -1,67 +1,66 @@
 package com.trandnquang.j_brain.controller;
 
-import com.trandnquang.j_brain.dto.response.SearchResultDTO;
+import com.trandnquang.j_brain.dto.response.*;
 import com.trandnquang.j_brain.service.JotobaService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 
 /**
- * REST façade over the Jotoba dictionary API.
+ * SearchController — REST proxy layer over JotobaService.
  *
  * <p>
- * WHY: Exposing Jotoba search directly from the backend (rather than
- * calling it from the frontend) lets us: (a) add auth guards on expensive
- * endpoints, (b) enrich/filter the upstream response before it hits the client,
- * and (c) reuse the same data for flashcard creation in
- * {@code FlashcardService}
- * without a second HTTP round-trip from the browser.
+ * WHY: All four search modes (words, kanji, sentences, names) are routed
+ * through this backend so the browser never has direct access to Jotoba or
+ * Tatoeba (CORS + rate-limit protection per spec).
+ *
+ * <p>
+ * WHY always 200: React Query requires query functions to return a
+ * non-undefined
+ * value. Returning 204 No Content causes the frontend fetch wrapper to return
+ * undefined, which React Query rejects at runtime. Always returning 200 + []
+ * is the correct contract for search endpoints.
  */
 @RestController
 @RequestMapping("/api/v1/search")
 @RequiredArgsConstructor
 @Validated
+@Tag(name = "Search", description = "Dictionary search across all four Jotoba modes")
 public class SearchController {
 
     private final JotobaService jotobaService;
 
-    /**
-     * Search the Jotoba word dictionary.
-     *
-     * @param keyword Any Japanese (Kana/Kanji/Romaji) or English search term.
-     * @return 200 with a list of matched word DTOs, or 204 if no results.
-     */
     @GetMapping("/words")
-    public ResponseEntity<List<SearchResultDTO>> searchWords(
+    @Operation(summary = "Search words/vocabulary (Jotoba)")
+    public Mono<List<WordResultDTO>> searchWords(
             @RequestParam @NotBlank String keyword) {
-
-        List<SearchResultDTO> results = jotobaService.searchWords(keyword).block();
-
-        if (results == null || results.isEmpty()) {
-            return ResponseEntity.noContent().build();
-        }
-        return ResponseEntity.ok(results);
+        return jotobaService.searchWords(keyword).map(WordSearchResponse::words);
     }
 
-    /**
-     * Search the Jotoba kanji dictionary.
-     *
-     * @param keyword A kanji character or related search term.
-     * @return 200 with a list of matched kanji DTOs, or 204 if no results.
-     */
     @GetMapping("/kanji")
-    public ResponseEntity<List<SearchResultDTO>> searchKanji(
+    @Operation(summary = "Search kanji characters (Jotoba)")
+    public Mono<List<KanjiResultDTO>> searchKanji(
             @RequestParam @NotBlank String keyword) {
+        return jotobaService.searchKanji(keyword).map(KanjiSearchResponse::kanji);
+    }
 
-        List<SearchResultDTO> results = jotobaService.searchKanji(keyword).block();
+    @GetMapping("/sentences")
+    @Operation(summary = "Search example sentences (Tatoeba proxy via Jotoba)")
+    public Mono<List<SentenceDTO>> searchSentences(
+            @RequestParam @NotBlank String keyword) {
+        return jotobaService.searchSentences(keyword).map(SentenceSearchResponse::sentences);
+    }
 
-        if (results == null || results.isEmpty()) {
-            return ResponseEntity.noContent().build();
-        }
-        return ResponseEntity.ok(results);
+    @GetMapping("/names")
+    @Operation(summary = "Search Japanese names (Jotoba)")
+    public Mono<List<NameResultDTO>> searchNames(
+            @RequestParam @NotBlank String keyword) {
+        return jotobaService.searchNames(keyword).map(NameSearchResponse::names);
     }
 }

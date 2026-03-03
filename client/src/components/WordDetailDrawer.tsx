@@ -1,27 +1,81 @@
-import { X, Volume2, Plus, Loader2 } from "lucide-react";
-import { useDecks, useCreateFlashcard } from "../hooks/useApi";
+import { X, Volume2, Plus, Loader2, Sparkles, BookOpen } from "lucide-react";
+import { useState, useEffect } from "react";
+import {
+    useDecks,
+    useCreateFlashcard,
+    useGenerateExamples,
+} from "../hooks/useApi";
 import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
-import type { SearchResultDTO, ApiError, ExampleResponse } from "../types/api";
-import { useState } from "react";
+import { FuriganaText } from "./FuriganaText";
+import { PitchAccentSVG } from "./PitchAccentSVG";
+import type { WordResultDTO, ExampleResponse } from "../types/api";
 
 interface Props {
-    result: SearchResultDTO | null;
+    result: WordResultDTO | null;
     onClose: () => void;
 }
 
+// Style display config: colour + label for each context style
+const STYLE_CONFIG: Record<
+    string,
+    { label: string; accent: string; dot: string }
+> = {
+    Keigo: {
+        label: "Keigo (丁寧語)",
+        accent: "bg-blue-50 border-blue-200",
+        dot: "bg-blue-500",
+    },
+    Daily: {
+        label: "Daily (日常)",
+        accent: "bg-green-50 border-green-200",
+        dot: "bg-green-500",
+    },
+    Anime: {
+        label: "Anime (アニメ)",
+        accent: "bg-purple-50 border-purple-200",
+        dot: "bg-purple-500",
+    },
+};
+
 /**
- * Slide-in right drawer that shows the full detail of a Jotoba search result.
- * Houses the "Add to Deck" action so the user can save from within the detail view.
+ * WordDetailDrawer — slide-in right panel with full word details and AI examples.
+ *
+ * Phase 3B: On drawer open, fires the non-persisting AI generation endpoint
+ * immediately. Examples are shown inline. On "Add to Deck", examples are sent
+ * in the flashcard request body and persisted atomically — no second AI call.
  */
 export function WordDetailDrawer({ result, onClose }: Props) {
     const { data: deckList } = useDecks();
     const createFlashcard = useCreateFlashcard();
+    const generateExamples = useGenerateExamples();
 
     const [selectedDeckId, setSelectedDeckId] = useState("");
     const [saved, setSaved] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [examples, setExamples] = useState<ExampleResponse[]>([]);
+
+    // Reset state every time a new word is opened
+    useEffect(() => {
+        if (!result) return;
+        setSaved(false);
+        setSaving(false);
+        setError(null);
+        setExamples([]);
+        setSelectedDeckId("");
+
+        // Trigger AI generation immediately on open (spec: only fires on detail view)
+        const meanings = result.senses.flatMap((s) => s.glosses);
+        generateExamples.mutate(
+            { keyword: result.keyword ?? result.kana, meanings },
+            {
+                onSuccess: (data) => {
+                    if (data) setExamples(data);
+                },
+            },
+        );
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [result?.kana]);
 
     if (!result) return null;
 
@@ -40,56 +94,71 @@ export function WordDetailDrawer({ result, onClose }: Props) {
         setError(null);
         setSaving(true);
         try {
+            const meanings = result.senses.flatMap((s) => s.glosses);
+            const partOfSpeech = [
+                ...new Set(result.senses.flatMap((s) => s.pos)),
+            ];
+
             await createFlashcard.mutateAsync({
                 deckId: selectedDeckId,
-                cardType: result.cardType,
-                keyword: result.keyword,
+                cardType: "WORD",
+                keyword: result.keyword ?? result.kana,
+                kana: result.kana,
                 furigana: result.furigana ?? undefined,
-                meanings: result.meanings,
-                partOfSpeech: result.partOfSpeech ?? undefined,
-                pitchAccentData: result.pitchAccentData ?? undefined,
+                common: result.common,
+                serializedSenses: JSON.stringify(result.senses),
+                meanings: meanings.length > 0 ? meanings : [result.kana],
+                partOfSpeech,
+                serializedPitchAccent:
+                    result.pitch.length > 0
+                        ? JSON.stringify(result.pitch)
+                        : undefined,
                 audioUrl: result.audioUrl ?? undefined,
-                strokeCount: result.strokeCount ?? undefined,
-                jlptLevel: result.jlptLevel ?? undefined,
-                onyomi: result.onyomi ?? undefined,
-                kunyomi: result.kunyomi ?? undefined,
+                kanjiComponents: result.kanjiComponents,
+                // Pass pre-generated examples → backend saves inline, no second AI call
+                preGeneratedExamples:
+                    examples.length > 0 ? examples : undefined,
             });
             setSaved(true);
-        } catch (err) {
-            setError((err as ApiError)?.message ?? "Failed to save.");
+        } catch (e: unknown) {
+            setError((e as { message?: string })?.message ?? "Failed to save.");
         } finally {
             setSaving(false);
         }
     };
 
-    // Strip Jotoba bracket furigana  [走|はし]る  →  走る
-    const stripFurigana = (f: string) =>
-        f.replace(/\[([^|]+)\|[^\]]+\]/g, "$1");
-    // Extract only the reading (kana)  [走|はし]る  →  はしる
-    const extractReading = (f: string) =>
-        f.replace(/\[([^|]*)\|([^\]]*)\]/g, "$2");
+    const displayKeyword = result.keyword ?? result.kana;
+    const isGenerating = generateExamples.isPending;
 
     return (
         <>
-            {/* ── Backdrop ── */}
+            {/* Backdrop */}
             <div
                 className="fixed inset-0 bg-black/20 z-40 animate-in fade-in duration-200"
                 onClick={onClose}
             />
 
-            {/* ── Drawer panel ── */}
-            <aside className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white shadow-2xl z-50 overflow-y-auto flex flex-col animate-in slide-in-from-right duration-300">
-                {/* Header */}
+            {/* Drawer */}
+            <aside
+                className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white shadow-2xl z-50
+        overflow-y-auto flex flex-col animate-in slide-in-from-right duration-300"
+            >
+                {/* ── Header ── */}
                 <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-start justify-between">
                     <div>
-                        <h2 className="text-3xl font-black tracking-tight">
-                            {result.keyword}
-                        </h2>
-                        {result.furigana && (
+                        {result.furigana ? (
+                            <FuriganaText
+                                furigana={result.furigana}
+                                className="text-3xl font-black tracking-tight"
+                            />
+                        ) : (
+                            <h2 className="text-3xl font-black tracking-tight">
+                                {displayKeyword}
+                            </h2>
+                        )}
+                        {result.keyword && (
                             <p className="text-gray-400 mt-0.5">
-                                {extractReading(result.furigana)}
-                                <span className="text-gray-300 mx-2">·</span>
-                                {stripFurigana(result.furigana)}
+                                {result.kana}
                             </p>
                         )}
                     </div>
@@ -112,156 +181,172 @@ export function WordDetailDrawer({ result, onClose }: Props) {
                     </div>
                 </div>
 
-                {/* Body */}
+                {/* ── Body ── */}
                 <div className="flex-1 px-6 py-6 space-y-7">
-                    {/* Tags */}
-                    {result.partOfSpeech && result.partOfSpeech.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                            {result.partOfSpeech.map((pos) => (
-                                <Badge
-                                    key={pos}
-                                    variant="outline"
-                                    className="border-blue-200 text-blue-700 bg-blue-50 text-xs"
-                                >
-                                    {pos}
-                                </Badge>
-                            ))}
-                            {result.jlptLevel && (
-                                <Badge
-                                    variant="outline"
-                                    className="border-red-200 text-red-700 bg-red-50 text-xs"
-                                >
-                                    JLPT N{result.jlptLevel}
-                                </Badge>
-                            )}
+                    {/* Common badge */}
+                    {result.common && (
+                        <div className="inline-flex items-center gap-1.5 text-sm text-emerald-700">
+                            <span
+                                className="w-5 h-5 rounded-full bg-emerald-500 text-white text-[11px] font-black
+                flex items-center justify-center"
+                            >
+                                C
+                            </span>
+                            Common vocabulary word
                         </div>
                     )}
 
-                    {/* Meanings */}
+                    {/* ── Senses ── */}
                     <section>
-                        <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-3">
-                            Meanings
+                        <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-3 flex items-center gap-1.5">
+                            <BookOpen className="w-3.5 h-3.5" /> Meanings
                         </h3>
-                        <ol className="space-y-2">
-                            {result.meanings.map((m, i) => (
+                        <ol className="space-y-3">
+                            {result.senses.map((sense, i) => (
                                 <li key={i} className="flex gap-3">
                                     <span className="text-gray-300 font-mono text-sm min-w-[1.2rem] pt-0.5">
                                         {i + 1}.
                                     </span>
-                                    <span className="text-gray-800">{m}</span>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-gray-800">
+                                            {sense.glosses.join(", ")}
+                                        </p>
+                                        {sense.misc.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 mt-1">
+                                                {sense.misc.map((m) => (
+                                                    <span
+                                                        key={m}
+                                                        className="px-1.5 py-0.5 text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded"
+                                                    >
+                                                        {m}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {sense.pos.length > 0 && (
+                                        <span className="text-[11px] text-blue-600 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded shrink-0 text-right leading-snug">
+                                            {sense.pos[0]}
+                                        </span>
+                                    )}
                                 </li>
                             ))}
                         </ol>
                     </section>
 
-                    {/* Kanji-only: readings */}
-                    {result.cardType === "KANJI" &&
-                        (result.onyomi || result.kunyomi) && (
-                            <section className="grid grid-cols-2 gap-4">
-                                {result.onyomi && result.onyomi.length > 0 && (
-                                    <div>
-                                        <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-2">
-                                            On'yomi
-                                        </h3>
-                                        <div className="flex flex-wrap gap-1">
-                                            {result.onyomi.map((r) => (
-                                                <span
-                                                    key={r}
-                                                    className="px-2 py-0.5 bg-gray-100 rounded text-sm font-mono"
-                                                >
-                                                    {r}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                                {result.kunyomi &&
-                                    result.kunyomi.length > 0 && (
-                                        <div>
-                                            <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-2">
-                                                Kun'yomi
-                                            </h3>
-                                            <div className="flex flex-wrap gap-1">
-                                                {result.kunyomi.map((r) => (
-                                                    <span
-                                                        key={r}
-                                                        className="px-2 py-0.5 bg-gray-100 rounded text-sm font-mono"
-                                                    >
-                                                        {r}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                {result.strokeCount && (
-                                    <div>
-                                        <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-1">
-                                            Strokes
-                                        </h3>
-                                        <span className="text-lg font-bold">
-                                            {result.strokeCount}
-                                        </span>
-                                    </div>
-                                )}
-                            </section>
+                    {/* ── Pitch accent ── */}
+                    {result.pitch.length > 0 && (
+                        <section>
+                            <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-3">
+                                Pitch Accent
+                            </h3>
+                            <PitchAccentSVG pitch={result.pitch} />
+                        </section>
+                    )}
+
+                    {/* ── Kanji components ── */}
+                    {result.kanjiComponents.length > 0 && (
+                        <section>
+                            <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-2">
+                                Kanji Components
+                            </h3>
+                            <div className="flex flex-wrap gap-2">
+                                {result.kanjiComponents.map((c) => (
+                                    <span
+                                        key={c}
+                                        className="px-3 py-1.5 text-xl font-bold bg-gray-50 border border-gray-200 rounded-lg"
+                                    >
+                                        {c}
+                                    </span>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {/* ── AI Examples (Phase 3B) ── */}
+                    <section>
+                        <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-3 flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            AI Example Sentences
+                            {isGenerating && (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin ml-1 text-blue-400" />
+                            )}
+                        </h3>
+
+                        {isGenerating && examples.length === 0 && (
+                            <div className="border border-dashed border-gray-200 rounded-xl px-4 py-8 text-center text-gray-400">
+                                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-blue-300" />
+                                <p className="text-sm">
+                                    Generating Keigo · Daily · Anime examples…
+                                </p>
+                                <p className="text-xs mt-1">
+                                    This takes 5–30 s with a local LLM
+                                </p>
+                            </div>
                         )}
 
-                    {/* Pitch accent */}
-                    {result.pitchAccentData &&
-                        result.pitchAccentData.length > 0 && (
-                            <section>
-                                <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-3">
-                                    Pitch Accent
-                                </h3>
-                                <div className="flex items-end gap-0.5">
-                                    {result.pitchAccentData.map((p, i) => (
-                                        <div
-                                            key={i}
-                                            className="flex flex-col items-center gap-1"
-                                        >
-                                            <div
-                                                className={`w-7 h-7 rounded flex items-center justify-center text-xs font-bold border ${
-                                                    p.high
-                                                        ? "bg-blue-600 text-white border-blue-600"
-                                                        : "bg-white text-gray-700 border-gray-300"
-                                                }`}
-                                            >
-                                                {p.part}
-                                            </div>
-                                            <span className="text-[10px] text-gray-400">
-                                                {p.high ? "H" : "L"}
+                        {!isGenerating && examples.length === 0 && (
+                            <div className="border border-dashed border-gray-200 rounded-xl px-4 py-6 text-center text-gray-400 text-sm">
+                                {generateExamples.isError
+                                    ? "⚠ LM Studio is not reachable. Start LM Studio to generate examples."
+                                    : "No examples returned. Check that LM Studio is running."}
+                            </div>
+                        )}
+
+                        <div className="space-y-3">
+                            {examples.map((ex) => {
+                                const cfg =
+                                    STYLE_CONFIG[ex.contextStyle] ??
+                                    STYLE_CONFIG.Daily;
+                                return (
+                                    <div
+                                        key={ex.contextStyle}
+                                        className={`rounded-xl border px-4 py-3 ${cfg.accent}`}
+                                    >
+                                        {/* Style label */}
+                                        <div className="flex items-center gap-1.5 mb-2">
+                                            <span
+                                                className={`w-2 h-2 rounded-full ${cfg.dot}`}
+                                            />
+                                            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-widest">
+                                                {cfg.label}
                                             </span>
                                         </div>
-                                    ))}
-                                </div>
-                            </section>
-                        )}
-
-                    {/* AI Examples placeholder */}
-                    <section>
-                        <h3 className="text-xs uppercase tracking-widest text-gray-400 font-medium mb-3">
-                            AI Examples
-                        </h3>
-                        {saved ? (
-                            <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded-lg px-4 py-3">
-                                ✓ Card saved! AI examples are being generated —
-                                go to the deck to review when ready.
-                            </p>
-                        ) : (
-                            <p className="text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg px-4 py-3 text-center">
-                                Add this word to a deck to generate 3 AI example
-                                sentences (Keigo · Daily · Anime).
-                            </p>
-                        )}
+                                        {/* Japanese sentence */}
+                                        <p className="text-base font-medium leading-relaxed mb-1">
+                                            {ex.furiganaSentence ? (
+                                                <FuriganaText
+                                                    furigana={
+                                                        ex.furiganaSentence
+                                                    }
+                                                />
+                                            ) : (
+                                                ex.japaneseSentence
+                                            )}
+                                        </p>
+                                        {/* Vietnamese translation */}
+                                        <p className="text-sm text-gray-500">
+                                            {ex.vietnameseTranslation}
+                                        </p>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </section>
                 </div>
 
-                {/* Footer — Add to Deck */}
+                {/* ── Footer — Add to Deck ── */}
                 <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-4 space-y-3">
-                    {deckList && deckList.length > 0 ? (
+                    {!deckList || deckList.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center">
+                            Create a deck first to save this word.
+                        </p>
+                    ) : (
                         <>
                             <select
-                                className="w-full h-10 rounded-md border border-gray-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+                                id="drawer-deck-select"
+                                className="w-full h-10 rounded-md border border-gray-200 bg-white px-3 text-sm
+                  focus:outline-none focus:ring-2 focus:ring-gray-300"
                                 value={selectedDeckId}
                                 onChange={(e) => {
                                     setSelectedDeckId(e.target.value);
@@ -276,22 +361,22 @@ export function WordDetailDrawer({ result, onClose }: Props) {
                                     </option>
                                 ))}
                             </select>
-
                             {error && (
                                 <p className="text-sm text-red-600">{error}</p>
                             )}
-
                             <Button
                                 id="drawer-add-btn"
                                 className="w-full h-11"
                                 disabled={saved || saving || !selectedDeckId}
                                 onClick={handleAdd}
-                                style={{
-                                    backgroundColor: saved
-                                        ? "#16a34a"
-                                        : undefined,
-                                    color: saved ? "white" : undefined,
-                                }}
+                                style={
+                                    saved
+                                        ? {
+                                              backgroundColor: "#16a34a",
+                                              color: "white",
+                                          }
+                                        : undefined
+                                }
                             >
                                 {saving ? (
                                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -300,15 +385,13 @@ export function WordDetailDrawer({ result, onClose }: Props) {
                                 ) : (
                                     <>
                                         <Plus className="w-4 h-4 mr-2" />
-                                        Add to Deck
+                                        {isGenerating
+                                            ? "Add to Deck (generating…)"
+                                            : "Add to Deck"}
                                     </>
                                 )}
                             </Button>
                         </>
-                    ) : (
-                        <p className="text-sm text-gray-400 text-center">
-                            Create a deck first to save this word.
-                        </p>
                     )}
                 </div>
             </aside>

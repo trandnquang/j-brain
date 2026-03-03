@@ -1,3 +1,6 @@
+/* Google Font — Inter — must be FIRST (PostCSS @import rule) */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -25,16 +28,28 @@
         --ring: 0 0% 3.9%;
         --radius: 0.5rem;
     }
+    html {
+        font-family: "Inter", system-ui, sans-serif;
+    }
+    body {
+        @apply bg-white text-gray-900;
+    }
 }
 
 @layer utilities {
-    /* Smooth fade-in for revealed content */
     .animate-in {
         animation-fill-mode: both;
     }
     .fade-in {
         animation-name: fadeIn;
     }
+    .duration-200 {
+        animation-duration: 200ms;
+    }
+    .duration-300 {
+        animation-duration: 300ms;
+    }
+
     @keyframes fadeIn {
         from {
             opacity: 0;
@@ -45,19 +60,32 @@
             transform: translateY(0);
         }
     }
-    .duration-300 {
-        animation-duration: 300ms;
-    }
-}
 
-/* Google Font — Inter */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap");
-
-@layer base {
-    html {
-        font-family: "Inter", system-ui, sans-serif;
+    /* 3D card flip — used by study session */
+    .perspective {
+        perspective: 1200px;
     }
-    body {
-        @apply bg-white text-gray-900;
+    .preserve-3d {
+        transform-style: preserve-3d;
+    }
+    .backface-hidden {
+        backface-visibility: hidden;
+    }
+    .rotate-y-180 {
+        transform: rotateY(180deg);
+    }
+
+    .slide-in-from-right {
+        animation-name: slideInFromRight;
+    }
+    @keyframes slideInFromRight {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
     }
 }

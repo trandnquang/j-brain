@@ -6,6 +6,8 @@ import com.trandnquang.j_brain.domain.Sm2Result;
 import com.trandnquang.j_brain.domain.entity.Deck;
 import com.trandnquang.j_brain.domain.entity.Flashcard;
 import com.trandnquang.j_brain.domain.entity.ReviewLog;
+import com.trandnquang.j_brain.domain.entity.FlashcardExample;
+import com.trandnquang.j_brain.domain.repository.FlashcardExampleRepository;
 import com.trandnquang.j_brain.domain.repository.FlashcardRepository;
 import com.trandnquang.j_brain.domain.repository.ReviewLogRepository;
 import com.trandnquang.j_brain.dto.request.CreateFlashcardRequest;
@@ -45,6 +47,7 @@ public class FlashcardService {
 
     private final FlashcardRepository flashcardRepository;
     private final ReviewLogRepository reviewLogRepository;
+    private final FlashcardExampleRepository exampleRepository;
     private final AiGenerationService aiGenerationService;
     private final Sm2EngineService sm2EngineService;
     private final DeckService deckService;
@@ -66,32 +69,60 @@ public class FlashcardService {
      */
     @Transactional
     public FlashcardResponse saveFlashcard(String userEmail, CreateFlashcardRequest request) {
-        Deck deck = deckService.loadAndAssertOwnership(request.deckId(), userEmail);
+        Deck deck = deckService.loadAndAssertOwnership(request.getDeckId(), userEmail);
 
         String pitchAccentJson = serializePitchAccent(request);
 
         Flashcard flashcard = Flashcard.builder()
                 .deck(deck)
-                .cardType(request.cardType() != null ? request.cardType() : "WORD")
-                .keyword(request.keyword())
-                .furigana(request.furigana())
-                .meanings(request.meanings())
-                .partOfSpeech(request.partOfSpeech())
+                .cardType(request.getCardType() != null ? request.getCardType() : "WORD")
+                .keyword(request.getKeyword())
+                .kana(request.getKana())
+                .furigana(request.getFurigana())
+                .common(request.getCommon() != null && request.getCommon())
+                .meanings(request.getMeanings())
+                .senses(request.getSerializedSenses())
+                .partOfSpeech(request.getPartOfSpeech())
                 .pitchAccentData(pitchAccentJson)
-                .audioUrl(request.audioUrl())
-                .strokeCount(request.strokeCount())
-                .jlptLevel(request.jlptLevel())
-                .onyomi(request.onyomi())
-                .kunyomi(request.kunyomi())
+                .audioUrl(request.getAudioUrl())
+                .kanjiComponents(request.getKanjiComponents())
+                .strokeCount(request.getStrokeCount())
+                .jlptLevel(request.getJlptLevel())
+                .onyomi(request.getOnyomi())
+                .kunyomi(request.getKunyomi())
+                .grade(request.getGrade())
+                .radical(request.getRadical())
+                .chinese(request.getChinese())
+                .koreanR(request.getKoreanR())
+                .koreanH(request.getKoreanH())
                 .nextReviewDate(OffsetDateTime.now())
                 .build();
 
         flashcard = flashcardRepository.save(flashcard);
 
-        // Fire-and-forget: AI generation runs on a separate thread pool
-        aiGenerationService.generateAndSaveExamplesAsync(flashcard);
+        List<ExampleResponse> savedExamples;
+        if (request.getPreGeneratedExamples() != null && !request.getPreGeneratedExamples().isEmpty()) {
+            // Phase 3B: persist pre-generated examples immediately — no second AI call
+            final Flashcard saved = flashcard;
+            List<com.trandnquang.j_brain.domain.entity.FlashcardExample> entities = request.getPreGeneratedExamples()
+                    .stream()
+                    .map(e -> com.trandnquang.j_brain.domain.entity.FlashcardExample.builder()
+                            .flashcard(saved)
+                            .contextStyle(e.contextStyle())
+                            .japaneseSentence(e.japaneseSentence())
+                            .furiganaSentence(e.furiganaSentence())
+                            .vietnameseTranslation(e.vietnameseTranslation())
+                            .build())
+                    .collect(java.util.stream.Collectors.toList());
+            exampleRepository.saveAll(entities);
+            savedExamples = request.getPreGeneratedExamples();
+        } else {
+            // Fallback: async AI generation (fire-and-forget)
+            aiGenerationService.generateAndSaveExamplesAsync(flashcard);
+            savedExamples = Collections.emptyList();
+        }
 
-        return toFlashcardResponse(flashcard, Collections.emptyList());
+        return toFlashcardResponse(flashcard, savedExamples);
     }
 
     // =========================================================================
@@ -221,14 +252,10 @@ public class FlashcardService {
     // =========================================================================
 
     private String serializePitchAccent(CreateFlashcardRequest request) {
-        if (request.pitchAccentData() == null)
+        if (request.getSerializedPitchAccent() == null)
             return null;
-        try {
-            return objectMapper.writeValueAsString(request.pitchAccentData());
-        } catch (JsonProcessingException e) {
-            log.error("Failed to serialize pitchAccentData for keyword '{}'", request.keyword(), e);
-            return null;
-        }
+        // Already a JSON string — passed through as-is
+        return request.getSerializedPitchAccent();
     }
 
     private List<ExampleResponse> mapExamples(Flashcard f) {

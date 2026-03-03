@@ -4,30 +4,24 @@ import type {
     RegisterRequest,
     DeckResponse,
     CreateDeckRequest,
-    SearchResultDTO,
+    WordResultDTO,
+    KanjiResultDTO,
+    SentenceDTO,
+    NameResultDTO,
     FlashcardResponse,
     CreateFlashcardRequest,
+    ExampleResponse,
     ReviewCardResponse,
     SubmitReviewRequest,
     ReviewResultResponse,
 } from "../types/api";
 
-// ============================================================
-// BASE CONFIG
-// ============================================================
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
 
-/** Retrieve the stored JWT from localStorage */
 export const getToken = (): string | null => localStorage.getItem("jwt_token");
-/** Persist the JWT to localStorage */
-export const setToken = (token: string) =>
-    localStorage.setItem("jwt_token", token);
-/** Remove the JWT from localStorage (logout) */
+export const setToken = (t: string) => localStorage.setItem("jwt_token", t);
 export const clearToken = () => localStorage.removeItem("jwt_token");
 
-// ============================================================
-// CORE FETCH WRAPPER
-// ============================================================
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const token = getToken();
     const headers: Record<string, string> = {
@@ -37,24 +31,19 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
     const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
-
-    if (res.status === 204) return undefined as T; // No Content
-
+    if (res.status === 204) return undefined as T;
     const data = await res.json();
-    if (!res.ok) throw data; // Throws the ApiError envelope from GlobalExceptionHandler
+    if (!res.ok) throw data;
     return data as T;
 }
 
-// ============================================================
-// AUTH
-// ============================================================
+// ── Auth ──────────────────────────────────────────────────────────────────────
 export const auth = {
     login: (body: LoginRequest) =>
         request<AuthResponse>("/api/auth/login", {
             method: "POST",
             body: JSON.stringify(body),
         }),
-
     register: (body: RegisterRequest) =>
         request<AuthResponse>("/api/auth/register", {
             method: "POST",
@@ -62,27 +51,42 @@ export const auth = {
         }),
 };
 
-// ============================================================
-// SEARCH
-// ============================================================
+// ── Search (Phase 2) ──────────────────────────────────────────────────────────
 export const search = {
     words: (keyword: string) =>
-        request<SearchResultDTO[]>(
+        request<WordResultDTO[]>(
             `/api/v1/search/words?keyword=${encodeURIComponent(keyword)}`,
         ),
-
     kanji: (keyword: string) =>
-        request<SearchResultDTO[]>(
+        request<KanjiResultDTO[]>(
             `/api/v1/search/kanji?keyword=${encodeURIComponent(keyword)}`,
+        ),
+    sentences: (keyword: string) =>
+        request<SentenceDTO[]>(
+            `/api/v1/search/sentences?keyword=${encodeURIComponent(keyword)}`,
+        ),
+    names: (keyword: string) =>
+        request<NameResultDTO[]>(
+            `/api/v1/search/names?keyword=${encodeURIComponent(keyword)}`,
         ),
 };
 
-// ============================================================
-// DECKS
-// ============================================================
+// ── AI (Phase 3B) ─────────────────────────────────────────────────────────────
+export const ai = {
+    /**
+     * On-demand example generation — triggered when user opens the word detail drawer.
+     * Returns 3 examples (Keigo, Daily, Anime) or null if LM Studio is unreachable.
+     */
+    generateExamples: (keyword: string, meanings: string[]) =>
+        request<ExampleResponse[] | null>("/api/v1/ai/examples", {
+            method: "POST",
+            body: JSON.stringify({ keyword, meanings }),
+        }),
+};
+
+// ── Decks ─────────────────────────────────────────────────────────────────────
 export const decks = {
     list: () => request<DeckResponse[]>("/api/v1/decks"),
-
     create: (body: CreateDeckRequest) =>
         request<DeckResponse>("/api/v1/decks", {
             method: "POST",
@@ -90,13 +94,10 @@ export const decks = {
         }),
 };
 
-// ============================================================
-// FLASHCARDS
-// ============================================================
+// ── Flashcards ────────────────────────────────────────────────────────────────
 export const flashcards = {
     list: (deckId: string) =>
         request<FlashcardResponse[]>(`/api/v1/flashcards?deckId=${deckId}`),
-
     create: (body: CreateFlashcardRequest) =>
         request<FlashcardResponse>("/api/v1/flashcards", {
             method: "POST",
@@ -104,13 +105,10 @@ export const flashcards = {
         }),
 };
 
-// ============================================================
-// REVIEWS
-// ============================================================
+// ── Reviews ───────────────────────────────────────────────────────────────────
 export const reviews = {
     due: (deckId: string) =>
         request<ReviewCardResponse[]>(`/api/v1/decks/${deckId}/reviews`),
-
     submit: (body: SubmitReviewRequest) =>
         request<ReviewResultResponse>("/api/v1/reviews", {
             method: "POST",

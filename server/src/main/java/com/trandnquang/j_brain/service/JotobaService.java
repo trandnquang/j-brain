@@ -1,227 +1,366 @@
 package com.trandnquang.j_brain.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.trandnquang.j_brain.dto.request.JotobaSearchRequest;
-import com.trandnquang.j_brain.dto.response.SearchResultDTO;
+import com.trandnquang.j_brain.dto.response.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 /**
- * Non-blocking gateway to the Jotoba Japanese Dictionary API.
+ * JotobaService — Non-blocking proxy to the Jotoba dictionary API.
  *
  * <p>
- * WHY: Every method returns a {@link Mono} so callers can compose them
- * into reactive pipelines (e.g. zip with AI generation) without ever blocking
- * a Tomcat/Netty thread. The raw JSON is eagerly mapped into typed
- * {@link SearchResultDTO} objects here, keeping controllers and services
- * free from Jackson tree-walking logic.
+ * WHY: All third-party API calls MUST go through the backend (spec rule).
+ * This service is the single source of truth for Jotoba data, and is
+ * responsible for all JSON-to-DTO mapping including:
+ * - POS union-type flattening (nested JSON enums → human-readable strings)
+ * - Kanji component extraction from Unicode ranges
+ * - Furigana bracket format preservation
+ * - Tatoeba sentence proxy (never called from the browser)
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class JotobaService {
 
     private final WebClient jotobaWebClient;
 
+    // Matches a single CJK Unified Ideograph — used for kanji extraction
+    private static final Pattern KANJI_PATTERN = Pattern.compile("[\\u4E00-\\u9FFF\\u3400-\\u4DBF]");
+
     // =========================================================================
-    // PUBLIC API
+    // WORD SEARCH
     // =========================================================================
 
     /**
-     * Searches the Jotoba word dictionary for the given term.
-     * Supports Romaji, Kana, Kanji, and English input as per Jotoba spec.
-     *
-     * @param keyword The search term.
-     * @return A {@link Mono} of {@link SearchResultDTO} list mapped from the
-     *         top-ranked word match, or empty if no results are found.
+     * Searches Jotoba for word entries matching {@code keyword}.
+     * Returns a fully mapped {@link WordSearchResponse} with structured senses,
+     * pitch accent, furigana, common flag, audio URL, and kanji components.
      */
-    public Mono<List<SearchResultDTO>> searchWords(String keyword) {
-        JotobaSearchRequest requestBody = new JotobaSearchRequest(keyword, "English", false);
-
+    public Mono<WordSearchResponse> searchWords(String keyword) {
         return jotobaWebClient.post()
                 .uri("/search/words")
-                .bodyValue(requestBody)
+                .bodyValue(buildJotobaBody(keyword))
                 .retrieve()
                 .bodyToMono(JsonNode.class)
-                .map(this::mapWordsResponse)
-                .onErrorResume(WebClientResponseException.class, ex -> {
-                    log.error("Jotoba /search/words HTTP {}: {}", ex.getStatusCode(), ex.getResponseBodyAsString());
-                    return Mono.just(Collections.emptyList());
+                .map(json -> {
+                    List<WordResultDTO> words = new ArrayList<>();
+                    JsonNode wordNodes = json.path("words");
+                    if (wordNodes.isArray()) {
+                        wordNodes.forEach(w -> words.add(mapWord(w)));
+                    }
+                    return new WordSearchResponse(words);
                 })
                 .onErrorResume(ex -> {
-                    log.error("Jotoba /search/words connection error: {}", ex.getMessage());
-                    return Mono.just(Collections.emptyList());
+                    log.error("Jotoba word search failed for '{}': {}", keyword, ex.getMessage());
+                    return Mono.just(new WordSearchResponse(Collections.emptyList()));
                 });
     }
 
-    /**
-     * Searches the Jotoba kanji dictionary for the given character or term.
-     *
-     * @param keyword A kanji literal or search term.
-     * @return A {@link Mono} of {@link SearchResultDTO} list mapped from kanji
-     *         results.
-     */
-    public Mono<List<SearchResultDTO>> searchKanji(String keyword) {
-        JotobaSearchRequest requestBody = new JotobaSearchRequest(keyword, "English", false);
+    // =========================================================================
+    // KANJI SEARCH
+    // =========================================================================
 
+    /**
+     * Searches Jotoba for kanji entries matching {@code keyword}.
+     * Returns full kanji detail including Phase 2 fields (radical, grade,
+     * Chinese/Korean readings, parts, similar).
+     */
+    public Mono<KanjiSearchResponse> searchKanji(String keyword) {
         return jotobaWebClient.post()
                 .uri("/search/kanji")
-                .bodyValue(requestBody)
+                .bodyValue(buildJotobaBody(keyword))
                 .retrieve()
                 .bodyToMono(JsonNode.class)
-                .map(this::mapKanjiResponse)
-                .onErrorResume(WebClientResponseException.class, ex -> {
-                    log.error("Jotoba /search/kanji HTTP {}: {}", ex.getStatusCode(), ex.getResponseBodyAsString());
-                    return Mono.just(Collections.emptyList());
+                .map(json -> {
+                    List<KanjiResultDTO> kanji = new ArrayList<>();
+                    JsonNode nodes = json.path("kanji");
+                    if (nodes.isArray()) {
+                        nodes.forEach(k -> kanji.add(mapKanji(k)));
+                    }
+                    return new KanjiSearchResponse(kanji);
                 })
                 .onErrorResume(ex -> {
-                    log.error("Jotoba /search/kanji connection error: {}", ex.getMessage());
-                    return Mono.just(Collections.emptyList());
+                    log.error("Jotoba kanji search failed for '{}': {}", keyword, ex.getMessage());
+                    return Mono.just(new KanjiSearchResponse(Collections.emptyList()));
                 });
     }
 
-    /**
-     * Retrieves native example sentences from Jotoba for contextualized reading.
-     * These sentences are stored as {@code context_style = 'Jotoba_Native'}.
-     *
-     * @param keyword The word to find example sentences for.
-     * @return A {@link Mono} of raw JsonNode (sentence list) for downstream
-     *         processing.
-     */
-    public Mono<JsonNode> searchSentences(String keyword) {
-        JotobaSearchRequest requestBody = new JotobaSearchRequest(keyword, "English", false);
+    // =========================================================================
+    // NAMES SEARCH
+    // =========================================================================
 
+    /**
+     * Searches Jotoba for name entries matching {@code keyword}.
+     */
+    public Mono<NameSearchResponse> searchNames(String keyword) {
+        return jotobaWebClient.post()
+                .uri("/search/names")
+                .bodyValue(buildJotobaBody(keyword))
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .map(json -> {
+                    List<NameResultDTO> names = new ArrayList<>();
+                    JsonNode nodes = json.path("names");
+                    if (nodes.isArray()) {
+                        nodes.forEach(n -> names.add(mapName(n)));
+                    }
+                    return new NameSearchResponse(names);
+                })
+                .onErrorResume(ex -> {
+                    log.error("Jotoba names search failed for '{}': {}", keyword, ex.getMessage());
+                    return Mono.just(new NameSearchResponse(Collections.emptyList()));
+                });
+    }
+
+    // =========================================================================
+    // SENTENCES SEARCH (Tatoeba proxy via Jotoba)
+    // =========================================================================
+
+    /**
+     * Proxies a sentence search through Jotoba (which sources from Tatoeba).
+     * WHY: The spec forbids direct browser-to-Tatoeba calls for CORS & rate
+     * limit reasons. All sentence queries go through this backend proxy.
+     */
+    public Mono<SentenceSearchResponse> searchSentences(String keyword) {
         return jotobaWebClient.post()
                 .uri("/search/sentences")
-                .bodyValue(requestBody)
+                .bodyValue(buildJotobaBody(keyword))
                 .retrieve()
                 .bodyToMono(JsonNode.class)
-                .onErrorResume(WebClientResponseException.class, ex -> {
-                    log.error("Jotoba /search/sentences HTTP {}: {}", ex.getStatusCode(), ex.getResponseBodyAsString());
-                    return Mono.empty();
+                .map(json -> {
+                    List<SentenceDTO> sentences = new ArrayList<>();
+                    JsonNode nodes = json.path("sentences");
+                    if (nodes.isArray()) {
+                        nodes.forEach(s -> sentences.add(mapSentence(s)));
+                    }
+                    return new SentenceSearchResponse(sentences);
                 })
                 .onErrorResume(ex -> {
-                    log.error("Jotoba /search/sentences error: {}", ex.getMessage());
-                    return Mono.empty();
+                    log.error("Sentence search failed for '{}': {}", keyword, ex.getMessage());
+                    return Mono.just(new SentenceSearchResponse(Collections.emptyList()));
                 });
     }
 
     // =========================================================================
-    // PRIVATE MAPPING — raw JsonNode → typed SearchResultDTO
+    // PRIVATE MAPPERS
+    // =========================================================================
+
+    private WordResultDTO mapWord(JsonNode w) {
+        JsonNode reading = w.path("reading");
+        String kanji = reading.path("kanji").asText(null);
+        String kana = reading.path("kana").asText(null);
+        String furigana = reading.path("furigana").asText(null);
+
+        boolean common = w.path("common").asBoolean(false);
+        String audioUrl = w.path("audio").asText(null);
+
+        // Pitch accent
+        List<PitchDTO> pitch = new ArrayList<>();
+        w.path("pitch").forEach(p -> pitch.add(new PitchDTO(p.path("part").asText(), p.path("high").asBoolean())));
+
+        // Structured senses
+        List<SenseDTO> senses = new ArrayList<>();
+        w.path("senses").forEach(s -> senses.add(mapSense(s)));
+
+        // Keyword: prefer kanji form; fall back to kana
+        String keyword = (kanji != null && !kanji.isBlank()) ? kanji : kana;
+
+        // Extract kanji components from the keyword
+        List<String> kanjiComponents = extractKanjiChars(keyword);
+
+        return new WordResultDTO(keyword, kana, furigana, common, senses, pitch, audioUrl, kanjiComponents);
+    }
+
+    private SenseDTO mapSense(JsonNode s) {
+        List<String> glosses = toStringList(s.path("glosses"));
+        List<String> misc = resolveMisc(s.path("misc"));
+        List<String> pos = resolvePos(s.path("pos"));
+        return new SenseDTO(glosses, pos, misc);
+    }
+
+    private KanjiResultDTO mapKanji(JsonNode k) {
+        return new KanjiResultDTO(
+                k.path("literal").asText(),
+                toStringList(k.path("meanings")),
+                toStringList(k.path("onyomi")),
+                toStringList(k.path("kunyomi")),
+                k.path("stroke_count").asInt(0),
+                k.path("jlpt").isNull() ? null : k.path("jlpt").asInt(),
+                k.path("grade").isNull() ? null : k.path("grade").asInt(),
+                k.path("radical").asText(null),
+                toStringList(k.path("parts")),
+                toStringList(k.path("similar")),
+                toStringList(k.path("chinese")),
+                toStringList(k.path("korean_r")),
+                toStringList(k.path("korean_h")));
+    }
+
+    private SentenceDTO mapSentence(JsonNode s) {
+        return new SentenceDTO(
+                s.path("id").asLong(0),
+                s.path("content").asText(""),
+                s.path("furigana").asText(null),
+                s.path("translation").path("content").asText(""));
+    }
+
+    private NameResultDTO mapName(JsonNode n) {
+        List<String> nameTypes = new ArrayList<>();
+        n.path("name_type").forEach(t -> nameTypes.add(t.asText()));
+        return new NameResultDTO(
+                n.path("kanji").asText(null),
+                n.path("kana").asText(null),
+                n.path("transcription").asText(null),
+                nameTypes);
+    }
+
+    // =========================================================================
+    // POS FLATTENING
     // =========================================================================
 
     /**
-     * Maps the Jotoba {@code /search/words} JSON response to a list of typed DTOs.
-     * Each word entry becomes one {@link SearchResultDTO} with card_type = 'WORD'.
+     * Jotoba encodes POS as deeply nested JSON union types, e.g.:
+     * {"Verb":{"Godan":"Ru"}} or {"Verb":"Intransitive"}.
+     * This method flattens them to human-readable strings for the frontend.
      */
-    private List<SearchResultDTO> mapWordsResponse(JsonNode root) {
-        JsonNode wordsNode = root.path("words");
-        if (wordsNode.isMissingNode() || !wordsNode.isArray()) {
+    private List<String> resolvePos(JsonNode posArray) {
+        if (posArray.isNull() || posArray.isMissingNode())
             return Collections.emptyList();
-        }
-
-        List<SearchResultDTO> results = new ArrayList<>();
-        for (JsonNode word : wordsNode) {
-            JsonNode reading = word.path("reading");
-
-            // keyword is the kanji form if present, falls back to kana
-            String keyword = reading.path("kanji").asText(null);
-            if (keyword == null || keyword.isBlank()) {
-                keyword = reading.path("kana").asText("");
-            }
-
-            String furigana = reading.path("furigana").asText(null);
-            String audioUrl = word.path("audio").asText(null);
-
-            // Collect meanings from all senses, for English glosses only
-            List<String> meanings = new ArrayList<>();
-            List<String> partOfSpeech = new ArrayList<>();
-            JsonNode senses = word.path("senses");
-            if (senses.isArray()) {
-                for (JsonNode sense : senses) {
-                    sense.path("glosses").forEach(g -> meanings.add(g.asText()));
-                    sense.path("pos").forEach(p -> partOfSpeech.add(p.asText()));
-                }
-            }
-
-            // Pitch accent — stored as a raw list of {part, high} maps
-            List<Map<String, Object>> pitchData = new ArrayList<>();
-            JsonNode pitchArray = word.path("pitch");
-            if (pitchArray.isArray()) {
-                for (JsonNode p : pitchArray) {
-                    pitchData.add(Map.of(
-                            "part", p.path("part").asText(""),
-                            "high", p.path("high").asBoolean(false)));
-                }
-            }
-
-            results.add(new SearchResultDTO(
-                    "WORD",
-                    keyword,
-                    furigana,
-                    meanings,
-                    partOfSpeech,
-                    pitchData,
-                    audioUrl,
-                    null, null, null, null // Kanji-specific fields unused for words
-            ));
-        }
-        return results;
+        List<String> result = new ArrayList<>();
+        posArray.forEach(node -> result.add(flattenPosNode(node)));
+        return result;
     }
 
-    /**
-     * Maps the Jotoba {@code /search/kanji} JSON response to a list of typed DTOs.
-     * Each kanji entry becomes one {@link SearchResultDTO} with card_type =
-     * 'KANJI'.
-     */
-    private List<SearchResultDTO> mapKanjiResponse(JsonNode root) {
-        JsonNode kanjiArray = root.path("kanji");
-        if (kanjiArray.isMissingNode() || !kanjiArray.isArray()) {
+    private String flattenPosNode(JsonNode node) {
+        if (node.isTextual())
+            return mapPosLabel(node.asText(), null);
+        if (node.isObject()) {
+            String key = node.fieldNames().next();
+            JsonNode val = node.get(key);
+            if (val.isTextual())
+                return mapPosLabel(key, val.asText());
+            if (val.isObject()) {
+                String subKey = val.fieldNames().next();
+                return mapPosLabel(key + "." + subKey, val.get(subKey).asText(null));
+            }
+            return mapPosLabel(key, null);
+        }
+        return node.asText();
+    }
+
+    /** Maps a Jotoba POS identifier to a human-readable English label. */
+    private String mapPosLabel(String key, String subKey) {
+        return switch (key) {
+            case "Noun" -> "Noun";
+            case "Verb.Godan" -> buildGodanLabel(subKey);
+            case "Verb.Ichidan" -> "Ichidan verb";
+            case "Verb.Suru" -> "Suru verb";
+            case "Verb.Kuru" -> "Kuru verb";
+            case "Verb.Intransitive" -> "Intransitive";
+            case "Verb.Transitive" -> "Transitive";
+            case "Verb" -> subKey != null ? subKey + " verb" : "Verb";
+            case "Adjective.I" -> "い-adjective";
+            case "Adjective.Na" -> "な-adjective";
+            case "Adjective" -> "Adjective";
+            case "Adverb" -> "Adverb";
+            case "Particle" -> "Particle";
+            case "Interjection" -> "Interjection";
+            case "Conjunction" -> "Conjunction";
+            case "Prefix" -> "Prefix";
+            case "Suffix" -> "Suffix";
+            case "Expression" -> "Expression";
+            case "Numeral" -> "Numeral";
+            default -> key;
+        };
+    }
+
+    private String buildGodanLabel(String ending) {
+        if (ending == null)
+            return "Godan verb";
+        return switch (ending) {
+            case "Ru" -> "Godan verb - ru ending";
+            case "U" -> "Godan verb - u ending";
+            case "Ku" -> "Godan verb - ku ending";
+            case "Gu" -> "Godan verb - gu ending";
+            case "Su" -> "Godan verb - su ending";
+            case "Tu" -> "Godan verb - tsu ending";
+            case "Nu" -> "Godan verb - nu ending";
+            case "Bu" -> "Godan verb - bu ending";
+            case "Mu" -> "Godan verb - mu ending";
+            default -> "Godan verb - " + ending.toLowerCase() + " ending";
+        };
+    }
+
+    // =========================================================================
+    // MISC FLATTENING
+    // =========================================================================
+
+    private List<String> resolveMisc(JsonNode miscNode) {
+        if (miscNode.isNull() || miscNode.isMissingNode())
             return Collections.emptyList();
+        List<String> result = new ArrayList<>();
+        // misc may be a string or an array of strings/objects
+        if (miscNode.isTextual()) {
+            result.add(camelToWords(miscNode.asText()));
+        } else if (miscNode.isArray()) {
+            miscNode.forEach(m -> {
+                if (m.isTextual())
+                    result.add(camelToWords(m.asText()));
+                else if (m.isObject())
+                    m.fieldNames().forEachRemaining(f -> result.add(camelToWords(f)));
+            });
         }
+        return result;
+    }
 
-        List<SearchResultDTO> results = new ArrayList<>();
-        for (JsonNode kanji : kanjiArray) {
-            String literal = kanji.path("literal").asText("");
-            int strokeCount = kanji.path("stroke_count").asInt(0);
-            int jlptLevel = kanji.path("jlpt").asInt(0);
+    /** Converts CamelCase POS/Misc identifiers to spaced English words. */
+    private String camelToWords(String s) {
+        return s.replaceAll("([A-Z])", " $1").trim();
+    }
 
-            List<String> meanings = StreamSupport
-                    .stream(kanji.path("meanings").spliterator(), false)
-                    .map(JsonNode::asText)
-                    .toList();
+    // =========================================================================
+    // KANJI COMPONENT EXTRACTION
+    // =========================================================================
 
-            List<String> onyomi = StreamSupport
-                    .stream(kanji.path("onyomi").spliterator(), false)
-                    .map(JsonNode::asText)
-                    .toList();
+    /**
+     * Extracts individual CJK characters from a keyword string.
+     * WHY: Done server-side so the frontend never needs Unicode range logic.
+     * Preserves order, deduplicates, returns empty list for kana-only words.
+     */
+    private List<String> extractKanjiChars(String keyword) {
+        if (keyword == null)
+            return Collections.emptyList();
+        return keyword.codePoints()
+                .mapToObj(cp -> String.valueOf(Character.toChars(cp)))
+                .filter(c -> KANJI_PATTERN.matcher(c).matches())
+                .distinct()
+                .collect(Collectors.toList());
+    }
 
-            List<String> kunyomi = StreamSupport
-                    .stream(kanji.path("kunyomi").spliterator(), false)
-                    .map(JsonNode::asText)
-                    .toList();
+    // =========================================================================
+    // SHARED UTILITIES
+    // =========================================================================
 
-            results.add(new SearchResultDTO(
-                    "KANJI",
-                    literal,
-                    null, // kanji has no furigana
-                    meanings,
-                    null, null, null, // word-specific unused
-                    strokeCount == 0 ? null : strokeCount,
-                    jlptLevel == 0 ? null : jlptLevel,
-                    onyomi,
-                    kunyomi));
-        }
-        return results;
+    private Map<String, Object> buildJotobaBody(String keyword) {
+        return Map.of("query", keyword, "language", "English", "no_english", false);
+    }
+
+    private List<String> toStringList(JsonNode node) {
+        if (node.isNull() || node.isMissingNode())
+            return Collections.emptyList();
+        return StreamSupport.stream(node.spliterator(), false)
+                .map(JsonNode::asText)
+                .filter(s -> !s.isBlank())
+                .collect(Collectors.toList());
     }
 }

@@ -1,7 +1,4 @@
 services:
-    # =========================================================================
-    # STEP 1: DATABASE (PostgreSQL 16 + pgvector)
-    # =========================================================================
     db:
         build:
             context: ./db
@@ -23,38 +20,38 @@ services:
             interval: 10s
             timeout: 5s
             retries: 5
-    server:
-        build: ./server
-        container_name: jbrain-server
-        ports:
-            - "8080:8080"
-        depends_on:
-            db:
-                condition: service_healthy
-        environment:
-            SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/jbrain_db
-            SPRING_DATASOURCE_USERNAME: jbrain_admin
-            SPRING_DATASOURCE_PASSWORD: jbrain_password
-            AI_MODEL_URL: http://host.docker.internal:1234
-            AI_MODEL_API_KEY: lm-studio
-            AI_MODEL_NAME: qwen-3-4b-instruct
-            AI_MODEL_TEMPERATURE: "0.5"
-        extra_hosts:
-            - "host.docker.internal:host-gateway"
-        networks:
-            - jbrain_network
+    # server:
+    #     build: ./server
+    #     container_name: jbrain-server
+    #     ports:
+    #         - "8080:8080"
+    #     depends_on:
+    #         db:
+    #             condition: service_healthy
+    #     environment:
+    #         SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/jbrain_db
+    #         SPRING_DATASOURCE_USERNAME: jbrain_admin
+    #         SPRING_DATASOURCE_PASSWORD: jbrain_password
+    #         AI_MODEL_URL: http://host.docker.internal:1234
+    #         AI_MODEL_API_KEY: lm-studio
+    #         AI_MODEL_NAME: llama-3.2-3b-instruct
+    #         AI_MODEL_TEMPERATURE: "0.7"
+    #     extra_hosts:
+    #         - "host.docker.internal:host-gateway"
+    #     networks:
+    #         - jbrain_network
 
-    client:
-        build:
-            context: ./client
-            dockerfile: Dockerfile.dev
-        container_name: jbrain-client
-        ports:
-            - "3000:3000"
-        depends_on:
-            - server
-        networks:
-            - jbrain_network
+    # client:
+    #     build:
+    #         context: ./client
+    #         dockerfile: Dockerfile.dev
+    #     container_name: jbrain-client
+    #     ports:
+    #         - "3000:3000"
+    #     depends_on:
+    #         - server
+    #     networks:
+    #         - jbrain_network
 
 networks:
     jbrain_network:

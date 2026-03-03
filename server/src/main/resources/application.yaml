@@ -42,7 +42,7 @@ spring:
             base-url: ${AI_MODEL_URL:http://host.docker.internal:1234}
             chat:
                 options:
-                    model: ${AI_MODEL_NAME:qwen-3-4b-instruct}
+                    model: ${AI_MODEL_NAME:llama-3.2-3b-instruct}
                     temperature: ${AI_MODEL_TEMPERATURE:0.7}
 
 # ============================================================
