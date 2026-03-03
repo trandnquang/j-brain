@@ -186,7 +186,12 @@ public class JotobaService {
         List<String> glosses = toStringList(s.path("glosses"));
         List<String> misc = resolveMisc(s.path("misc"));
         List<String> pos = resolvePos(s.path("pos"));
-        return new SenseDTO(glosses, pos, misc);
+        // Contextual tags — null when absent so frontend skips them
+        String field = s.has("field") && !s.path("field").isNull() ? s.path("field").asText(null) : null;
+        String xref = s.has("xref") && !s.path("xref").isNull() ? s.path("xref").asText(null) : null;
+        String info = s.has("information") && !s.path("information").isNull() ? s.path("information").asText(null)
+                : null;
+        return new SenseDTO(glosses, pos, misc, field, xref, info);
     }
 
     private KanjiResultDTO mapKanji(JsonNode k) {
@@ -262,15 +267,22 @@ public class JotobaService {
     private String mapPosLabel(String key, String subKey) {
         return switch (key) {
             case "Noun" -> "Noun";
+            case "Noun.Suffix" -> "Suffix";
+            case "Noun.Prefix" -> "Prefix";
             case "Verb.Godan" -> buildGodanLabel(subKey);
             case "Verb.Ichidan" -> "Ichidan verb";
             case "Verb.Suru" -> "Suru verb";
             case "Verb.Kuru" -> "Kuru verb";
             case "Verb.Intransitive" -> "Intransitive";
             case "Verb.Transitive" -> "Transitive";
+            case "Verb.Irregular.NounOrAuxSuru" -> "Noun/suru verb";
+            case "Verb.Irregular.Su" -> "Su verb";
+            case "Verb.Irregular" -> "Irregular verb";
             case "Verb" -> subKey != null ? subKey + " verb" : "Verb";
             case "Adjective.I" -> "い-adjective";
             case "Adjective.Na" -> "な-adjective";
+            case "Adjective.No" -> "No adj.";
+            case "Adjective.PreNounVerb" -> "Noun/verb describing a noun";
             case "Adjective" -> "Adjective";
             case "Adverb" -> "Adverb";
             case "Particle" -> "Particle";
@@ -280,6 +292,7 @@ public class JotobaService {
             case "Suffix" -> "Suffix";
             case "Expression" -> "Expression";
             case "Numeral" -> "Numeral";
+            case "Counter" -> "Counter";
             default -> key;
         };
     }
