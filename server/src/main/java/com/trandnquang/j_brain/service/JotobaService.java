@@ -46,11 +46,13 @@ public class JotobaService {
      * Searches Jotoba for word entries matching {@code keyword}.
      * Returns a fully mapped {@link WordSearchResponse} with structured senses,
      * pitch accent, furigana, common flag, audio URL, and kanji components.
+     *
+     * @param language Jotoba language code ("English" | "Vietnamese"), defaults to "English"
      */
-    public Mono<WordSearchResponse> searchWords(String keyword) {
+    public Mono<WordSearchResponse> searchWords(String keyword, String language) {
         return jotobaWebClient.post()
                 .uri("/search/words")
-                .bodyValue(buildJotobaBody(keyword))
+                .bodyValue(buildJotobaBody(keyword, language))
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .map(json -> {
@@ -67,19 +69,22 @@ public class JotobaService {
                 });
     }
 
+    /** Convenience overload — defaults to English. */
+    public Mono<WordSearchResponse> searchWords(String keyword) {
+        return searchWords(keyword, "English");
+    }
+
     // =========================================================================
     // KANJI SEARCH
     // =========================================================================
 
     /**
      * Searches Jotoba for kanji entries matching {@code keyword}.
-     * Returns full kanji detail including Phase 2 fields (radical, grade,
-     * Chinese/Korean readings, parts, similar).
      */
-    public Mono<KanjiSearchResponse> searchKanji(String keyword) {
+    public Mono<KanjiSearchResponse> searchKanji(String keyword, String language) {
         return jotobaWebClient.post()
                 .uri("/search/kanji")
-                .bodyValue(buildJotobaBody(keyword))
+                .bodyValue(buildJotobaBody(keyword, language))
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .map(json -> {
@@ -96,6 +101,10 @@ public class JotobaService {
                 });
     }
 
+    public Mono<KanjiSearchResponse> searchKanji(String keyword) {
+        return searchKanji(keyword, "English");
+    }
+
     // =========================================================================
     // NAMES SEARCH
     // =========================================================================
@@ -103,10 +112,10 @@ public class JotobaService {
     /**
      * Searches Jotoba for name entries matching {@code keyword}.
      */
-    public Mono<NameSearchResponse> searchNames(String keyword) {
+    public Mono<NameSearchResponse> searchNames(String keyword, String language) {
         return jotobaWebClient.post()
                 .uri("/search/names")
-                .bodyValue(buildJotobaBody(keyword))
+                .bodyValue(buildJotobaBody(keyword, language))
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .map(json -> {
@@ -123,6 +132,10 @@ public class JotobaService {
                 });
     }
 
+    public Mono<NameSearchResponse> searchNames(String keyword) {
+        return searchNames(keyword, "English");
+    }
+
     // =========================================================================
     // SENTENCES SEARCH (Tatoeba proxy via Jotoba)
     // =========================================================================
@@ -132,10 +145,10 @@ public class JotobaService {
      * WHY: The spec forbids direct browser-to-Tatoeba calls for CORS & rate
      * limit reasons. All sentence queries go through this backend proxy.
      */
-    public Mono<SentenceSearchResponse> searchSentences(String keyword) {
+    public Mono<SentenceSearchResponse> searchSentences(String keyword, String language) {
         return jotobaWebClient.post()
                 .uri("/search/sentences")
-                .bodyValue(buildJotobaBody(keyword))
+                .bodyValue(buildJotobaBody(keyword, language))
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .map(json -> {
@@ -150,6 +163,10 @@ public class JotobaService {
                     log.error("Sentence search failed for '{}': {}", keyword, ex.getMessage());
                     return Mono.just(new SentenceSearchResponse(Collections.emptyList()));
                 });
+    }
+
+    public Mono<SentenceSearchResponse> searchSentences(String keyword) {
+        return searchSentences(keyword, "English");
     }
 
     // =========================================================================
@@ -361,11 +378,87 @@ public class JotobaService {
     }
 
     // =========================================================================
+    // AUTOCOMPLETE SUGGESTIONS
+    // =========================================================================
+
+    /**
+     * Fetches search suggestions from Jotoba's suggestion endpoint.
+     * WHY: Proxied through backend — browser cannot call Jotoba directly (CORS).
+     * Returns up to 10 formatted strings: "secondary (primary)" or just "primary".
+     */
+    public Mono<List<String>> fetchSuggestions(String input) {
+        return jotobaWebClient.post()
+                .uri("/suggestion")
+                .bodyValue(Map.of("input", input, "lang", "en-US", "search_type", 0))
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .map(json -> {
+                    List<String> suggestions = new ArrayList<>();
+                    if (json.isArray()) {
+                        json.forEach(item -> {
+                            String primary = item.path("primary").asText("");
+                            String secondary = item.has("secondary") && !item.path("secondary").isNull()
+                                    ? item.path("secondary").asText("") : "";
+                            if (!primary.isBlank()) {
+                                suggestions.add(secondary.isBlank() ? primary : secondary + " (" + primary + ")");
+                            }
+                        });
+                    }
+                    return suggestions.stream().limit(10).collect(Collectors.toList());
+                })
+                .onErrorResume(ex -> {
+                    log.warn("Suggestion fetch failed for '{}': {}", input, ex.getMessage());
+                    return Mono.just(Collections.emptyList());
+                });
+    }
+
+    // =========================================================================
+    // RADICAL SEARCH
+    // =========================================================================
+
+    /**
+     * Fetches kanji matching a combination of radicals via Jotoba's by_radical endpoint.
+     *
+     * <p>WHY: The response includes both matching kanji AND the set of radicals
+     * that are still "compatible" with the current selection ({@code possible_radicals}).
+     * The frontend uses this to grey-out incompatible radical buttons in real-time,
+     * preventing dead-end combinations before the user makes more selections.
+     *
+     * @param radicals Selected radical characters (e.g. ["一", "丿"])
+     * @param language Jotoba language code ("English" | "Vietnamese")
+     */
+    public Mono<RadicalSearchResponse> searchByRadical(List<String> radicals, String language) {
+        return jotobaWebClient.post()
+                .uri("/kanji/by_radical")
+                .bodyValue(Map.of("radicals", radicals, "language", language))
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .map(json -> {
+                    List<KanjiResultDTO> kanji = new ArrayList<>();
+                    JsonNode kanjiNodes = json.path("kanji");
+                    if (kanjiNodes.isArray()) {
+                        kanjiNodes.forEach(k -> kanji.add(mapKanji(k)));
+                    }
+                    List<String> possible = toStringList(json.path("possible_radicals"));
+                    return new RadicalSearchResponse(kanji, possible);
+                })
+                .onErrorResume(ex -> {
+                    log.error("Radical search failed for {}: {}", radicals, ex.getMessage());
+                    return Mono.just(new RadicalSearchResponse(Collections.emptyList(), Collections.emptyList()));
+                });
+    }
+
+
+    // =========================================================================
     // SHARED UTILITIES
     // =========================================================================
 
+    private Map<String, Object> buildJotobaBody(String keyword, String language) {
+        return Map.of("query", keyword, "language", language, "no_english", false);
+    }
+
     private Map<String, Object> buildJotobaBody(String keyword) {
-        return Map.of("query", keyword, "language", "English", "no_english", false);
+        return buildJotobaBody(keyword, "English");
     }
 
     private List<String> toStringList(JsonNode node) {

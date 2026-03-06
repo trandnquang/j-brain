@@ -53,23 +53,35 @@ export const auth = {
 
 // ── Search (Phase 2) ──────────────────────────────────────────────────────────
 export const search = {
-    words: (keyword: string) =>
+    suggestions: (input: string) =>
+        request<string[]>(
+            `/api/v1/search/suggestions?input=${encodeURIComponent(input)}`,
+        ),
+    words: (keyword: string, language = "English") =>
         request<WordResultDTO[]>(
-            `/api/v1/search/words?keyword=${encodeURIComponent(keyword)}`,
+            `/api/v1/search/words?keyword=${encodeURIComponent(keyword)}&language=${encodeURIComponent(language)}`,
         ),
-    kanji: (keyword: string) =>
+    kanji: (keyword: string, language = "English") =>
         request<KanjiResultDTO[]>(
-            `/api/v1/search/kanji?keyword=${encodeURIComponent(keyword)}`,
+            `/api/v1/search/kanji?keyword=${encodeURIComponent(keyword)}&language=${encodeURIComponent(language)}`,
         ),
-    sentences: (keyword: string) =>
+    sentences: (keyword: string, language = "English") =>
         request<SentenceDTO[]>(
-            `/api/v1/search/sentences?keyword=${encodeURIComponent(keyword)}`,
+            `/api/v1/search/sentences?keyword=${encodeURIComponent(keyword)}&language=${encodeURIComponent(language)}`,
         ),
-    names: (keyword: string) =>
+    names: (keyword: string, language = "English") =>
         request<NameResultDTO[]>(
-            `/api/v1/search/names?keyword=${encodeURIComponent(keyword)}`,
+            `/api/v1/search/names?keyword=${encodeURIComponent(keyword)}&language=${encodeURIComponent(language)}`,
         ),
+    byRadical: (radicals: string[], language = "English") => {
+        const params = radicals.map((r) => `radicals=${encodeURIComponent(r)}`).join("&");
+        return request<import("../types/api").RadicalSearchResponse>(
+            `/api/v1/search/by-radical?${params}&language=${encodeURIComponent(language)}`,
+        );
+    },
 };
+
+
 
 // ── AI (Phase 3B) ─────────────────────────────────────────────────────────────
 export const ai = {
@@ -92,6 +104,13 @@ export const decks = {
             method: "POST",
             body: JSON.stringify(body),
         }),
+    rename: (deckId: string, body: import("../types/api").RenameDeckRequest) =>
+        request<DeckResponse>(`/api/v1/decks/${deckId}`, {
+            method: "PATCH",
+            body: JSON.stringify(body),
+        }),
+    delete: (deckId: string) =>
+        request<void>(`/api/v1/decks/${deckId}`, { method: "DELETE" }),
 };
 
 // ── Flashcards ────────────────────────────────────────────────────────────────

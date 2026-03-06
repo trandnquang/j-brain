@@ -6,6 +6,24 @@ import type {
     SubmitReviewRequest,
 } from "../types/api";
 
+// ── Radical search (Phase 3) ──────────────────────────────────────────────────
+/**
+ * useRadicalSearch — fetches kanji + possible_radicals for a radical selection.
+ * WHY: queryKey uses *sorted* radicals so ["一","丿"] and ["丿","一"] resolve to
+ * the same cached entry, preventing duplicate API calls on re-selection order.
+ */
+export function useRadicalSearch(radicals: string[], language = "English") {
+    const sorted = [...radicals].sort();
+    return useQuery({
+        queryKey: ["by-radical", sorted, language],
+        queryFn: () => search.byRadical(sorted, language),
+        enabled: radicals.length > 0,
+        staleTime: 5 * 60 * 1000,
+        placeholderData: { kanji: [], possibleRadicals: [] },
+    });
+}
+
+
 // ── AI — on-demand example generation (Phase 3B, Item 2) ─────────────────────
 /**
  * useAiExamples — caches AI-generated examples per word keyword.
@@ -28,41 +46,57 @@ export function useAiExamples(
     });
 }
 
-// ── Word search (debounced via enabled flag) ───────────────────────────────────
-export function useWordSearch(keyword: string) {
+// ── Search suggestions (autocomplete) ────────────────────────────────────────
+/**
+ * useSuggestions — debounced autocomplete query against the backend suggestion proxy.
+ * WHY: staleTime 30s prevents hammering Jotoba on every keystroke; input is
+ * passed directly (debounce is handled by the caller's input state update timing).
+ */
+export function useSuggestions(input: string) {
     return useQuery({
-        queryKey: ["search", "words", keyword],
-        queryFn: () => search.words(keyword),
+        queryKey: ["suggestions", input],
+        queryFn: () => search.suggestions(input),
+        enabled: input.trim().length > 0,
+        staleTime: 30 * 1000,
+        placeholderData: [],
+    });
+}
+
+// ── Word search ────────────────────────────────────────────────────────────────
+export function useWordSearch(keyword: string, language = "English") {
+    return useQuery({
+        queryKey: ["search", "words", keyword, language],
+        queryFn: () => search.words(keyword, language),
         enabled: keyword.trim().length > 0,
         staleTime: 10 * 60 * 1000,
     });
 }
 
 // ── Kanji search ───────────────────────────────────────────────────────────────
-export function useKanjiSearch(keyword: string) {
+export function useKanjiSearch(keyword: string, language = "English") {
     return useQuery({
-        queryKey: ["search", "kanji", keyword],
-        queryFn: () => search.kanji(keyword),
+        queryKey: ["search", "kanji", keyword, language],
+        queryFn: () => search.kanji(keyword, language),
         enabled: keyword.trim().length > 0,
         staleTime: 10 * 60 * 1000,
     });
 }
 
 // ── Sentence search ────────────────────────────────────────────────────────────
-export function useSentenceSearch(keyword: string) {
+export function useSentenceSearch(keyword: string, language = "English") {
     return useQuery({
-        queryKey: ["search", "sentences", keyword],
-        queryFn: () => search.sentences(keyword),
+        queryKey: ["search", "sentences", keyword, language],
+        queryFn: () => search.sentences(keyword, language),
         enabled: keyword.trim().length > 0,
         staleTime: 10 * 60 * 1000,
     });
 }
 
 // ── Name search ────────────────────────────────────────────────────────────────
-export function useNameSearch(keyword: string) {
+export function useNameSearch(keyword: string, language = "English") {
     return useQuery({
-        queryKey: ["search", "names", keyword],
-        queryFn: () => search.names(keyword),
+        queryKey: ["search", "names", keyword, language],
+        queryFn: () => search.names(keyword, language),
         enabled: keyword.trim().length > 0,
         staleTime: 10 * 60 * 1000,
     });
@@ -76,6 +110,21 @@ export function useCreateDeck() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: (body: CreateDeckRequest) => decks.create(body),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ["decks"] }),
+    });
+}
+export function useRenameDeck() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ deckId, name, description }: { deckId: string; name: string; description?: string }) =>
+            decks.rename(deckId, { name, description }),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ["decks"] }),
+    });
+}
+export function useDeleteDeck() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (deckId: string) => decks.delete(deckId),
         onSuccess: () => qc.invalidateQueries({ queryKey: ["decks"] }),
     });
 }

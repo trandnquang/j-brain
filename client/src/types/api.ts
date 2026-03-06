@@ -25,8 +25,14 @@ export interface DeckResponse {
     name: string;
     description: string | null;
     createdAt: string;
+    cardCount: number;
+    dueCount: number;
 }
 export interface CreateDeckRequest {
+    name: string;
+    description?: string;
+}
+export interface RenameDeckRequest {
     name: string;
     description?: string;
 }
@@ -84,6 +90,11 @@ export interface NameResultDTO {
     kana: string;
     transcription: string;
     nameType: string[];
+}
+
+export interface RadicalSearchResponse {
+    kanji: KanjiResultDTO[];
+    possibleRadicals: string[];
 }
 
 // ---- FLASHCARD ----

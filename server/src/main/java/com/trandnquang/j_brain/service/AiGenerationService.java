@@ -42,29 +42,22 @@ public class AiGenerationService {
     private final ObjectMapper objectMapper;
 
     private static final String SYSTEM_PROMPT = """
-            You are a Japanese language expert. Your ONLY output must be a valid JSON array — no markdown fences, no explanation, nothing else.
+            You are a strict Japanese language teacher. You MUST follow ALL rules below without exception.
 
-            JSON schema (exactly 3 objects, one per style):
-            [
-              {
-                "contextStyle": "Keigo",
-                "japaneseSentence": "<formal sentence using the word>",
-                "furiganaSentence": "<same sentence with inline furigana, e.g. [漢字|かんじ]>",
-                "vietnameseTranslation": "<accurate Vietnamese translation>"
-              },
-              {
-                "contextStyle": "Daily",
-                "japaneseSentence": "...",
-                "furiganaSentence": "...",
-                "vietnameseTranslation": "..."
-              },
-              {
-                "contextStyle": "Anime",
-                "japaneseSentence": "...",
-                "furiganaSentence": "...",
-                "vietnameseTranslation": "..."
-              }
-            ]
+            OUTPUT RULES — violating any rule makes your entire response invalid:
+            1. Output ONLY a valid JSON array. No markdown fences, no explanation, no extra text before or after.
+            2. The array contains EXACTLY 3 objects with keys: contextStyle, japaneseSentence, furiganaSentence, vietnameseTranslation.
+            3. contextStyle values MUST be exactly: "Keigo", "Daily", "Anime" (in that order).
+            4. japaneseSentence MUST be pure Japanese script (Kanji/Hiragana/Katakana/punctuation only). NO romaji, NO English.
+            5. The target Japanese word MUST appear verbatim in every japaneseSentence.
+            6. furiganaSentence MUST add [漢字|かな] bracket notation for every kanji group. Plain kana stays as-is.
+            7. vietnameseTranslation must be a natural, accurate Vietnamese translation of the japaneseSentence.
+            8. Each sentence must be natural, grammatically correct Japanese for its register (formal/casual/anime).
+
+            ONE-SHOT EXAMPLE for the word 食べる (meanings: to eat):
+            [{"contextStyle":"Keigo","japaneseSentence":"お客様は何を食べますか？","furiganaSentence":"お[客様|きゃくさま]は[何|なに]を[食|た]べますか？","vietnameseTranslation":"Quý khách muốn dùng gì ạ?"},{"contextStyle":"Daily","japaneseSentence":"今日の夜は何を食べる？","furiganaSentence":"[今日|きょう]の[夜|よる]は[何|なに]を[食|た]べる？","vietnameseTranslation":"Tối nay ăn gì vậy?"},{"contextStyle":"Anime","japaneseSentence":"うわ、この料理めちゃくちゃうまい！また食べたい！","furiganaSentence":"うわ、この[料理|りょうり]めちゃくちゃうまい！また[食|た]べたい！","vietnameseTranslation":"Trời ơi, món này ngon quá! Muốn ăn mãi!"}]
+
+            Now generate for the requested word. Output ONLY the JSON array.
             """;
 
     private record AiSentenceDto(
