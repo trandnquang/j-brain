@@ -25,7 +25,7 @@ export function SenseRow({ sense, index, onXrefClick }: Props) {
             {/* Left: glosses + contextual tags */}
             <div className="flex-1 min-w-0">
                 <p className="text-gray-800 leading-relaxed">
-                    {sense.glosses.join("、")}
+                    {sense.glosses.join(", ")}
                 </p>
 
                 {/* Contextual tag row */}

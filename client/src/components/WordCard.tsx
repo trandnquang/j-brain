@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Volume2 } from "lucide-react";
 import { FuriganaText } from "./FuriganaText";
 import { PitchAccentSVG } from "./PitchAccentSVG";
-import { Badge } from "./ui/badge";
 import type { WordResultDTO } from "../types/api";
 
 interface Props {
@@ -59,12 +58,6 @@ export function WordCard({ word, isActive, onClick, onKanjiClick }: Props) {
                         ) : (
                             <span className="text-3xl font-black tracking-tight">
                                 {displayKeyword}
-                            </span>
-                        )}
-                        {/* Kana reading below if there's a separate kanji form */}
-                        {word.keyword && (
-                            <span className="text-base text-gray-400 font-normal leading-loose">
-                                ({word.kana})
                             </span>
                         )}
                     </div>
