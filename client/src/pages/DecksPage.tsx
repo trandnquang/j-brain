@@ -161,12 +161,16 @@ export default function DecksPage() {
                                 bg-white shadow-sm hover:shadow-md hover:border-gray-300 transition-all duration-200"
                         >
                             {/* Card body — click to study */}
-                            <button
+                            <div
                                 id={`deck-card-${deck.id}`}
-                                type="button"
-                                className="flex-1 text-left p-5"
+                                role="button"
+                                tabIndex={0}
+                                className="flex-1 text-left p-5 cursor-pointer"
                                 onClick={() => {
                                     if (renamingId !== deck.id) navigate(`/study/${deck.id}`);
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && renamingId !== deck.id) navigate(`/study/${deck.id}`);
                                 }}
                             >
                                 <div className="flex items-start justify-between gap-2">
@@ -227,7 +231,7 @@ export default function DecksPage() {
                                         )}
                                     </div>
                                 )}
-                            </button>
+                            </div>
 
                             {/* Footer — counts + actions */}
                             <div className="flex items-center justify-between px-5 pb-4 gap-2">

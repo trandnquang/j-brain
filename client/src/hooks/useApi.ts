@@ -23,7 +23,6 @@ export function useRadicalSearch(radicals: string[], language = "English") {
     });
 }
 
-
 // ── AI — on-demand example generation (Phase 3B, Item 2) ─────────────────────
 /**
  * useAiExamples — caches AI-generated examples per word keyword.
@@ -52,10 +51,10 @@ export function useAiExamples(
  * WHY: staleTime 30s prevents hammering Jotoba on every keystroke; input is
  * passed directly (debounce is handled by the caller's input state update timing).
  */
-export function useSuggestions(input: string) {
+export function useSuggestions(input: string, searchType: number = 0) {
     return useQuery({
-        queryKey: ["suggestions", input],
-        queryFn: () => search.suggestions(input),
+        queryKey: ["suggestions", input, searchType],
+        queryFn: () => search.suggestions(input, searchType),
         enabled: input.trim().length > 0,
         staleTime: 30 * 1000,
         placeholderData: [],
@@ -116,8 +115,15 @@ export function useCreateDeck() {
 export function useRenameDeck() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: ({ deckId, name, description }: { deckId: string; name: string; description?: string }) =>
-            decks.rename(deckId, { name, description }),
+        mutationFn: ({
+            deckId,
+            name,
+            description,
+        }: {
+            deckId: string;
+            name: string;
+            description?: string;
+        }) => decks.rename(deckId, { name, description }),
         onSuccess: () => qc.invalidateQueries({ queryKey: ["decks"] }),
     });
 }

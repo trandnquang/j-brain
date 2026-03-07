@@ -21,7 +21,13 @@ interface Props {
  * - Furigana container uses min-w-0 + break-words to prevent layout overflow
  * - Kanji component buttons + pitch accent in footer
  */
-export function WordCard({ word, isActive, onClick, onKanjiClick, onXrefClick }: Props) {
+export function WordCard({
+    word,
+    isActive,
+    onClick,
+    onKanjiClick,
+    onXrefClick,
+}: Props) {
     const [audioPlaying, setAudioPlaying] = useState(false);
 
     const playAudio = (e: React.MouseEvent) => {
@@ -29,7 +35,10 @@ export function WordCard({ word, isActive, onClick, onKanjiClick, onXrefClick }:
         if (!word.audioUrl || audioPlaying) return;
         const audio = new Audio(`https://jotoba.de${word.audioUrl}`);
         setAudioPlaying(true);
-        audio.play().catch(() => null).finally(() => setAudioPlaying(false));
+        audio
+            .play()
+            .catch(() => null)
+            .finally(() => setAudioPlaying(false));
     };
 
     const displayKeyword = word.keyword ?? word.kana;
@@ -58,16 +67,20 @@ export function WordCard({ word, isActive, onClick, onKanjiClick, onXrefClick }:
                     )}
                     {/* Kana reading below — only shown when there is a kanji form */}
                     {word.keyword && (
-                        <p className="text-sm text-gray-400 mt-0.5 font-normal">{word.kana}</p>
+                        <p className="text-sm text-gray-400 mt-0.5 font-normal">
+                            {word.kana}
+                        </p>
                     )}
                 </div>
 
                 {/* Right: common badge + audio */}
                 <div className="flex items-center gap-2 shrink-0 pt-1">
                     {word.common && (
-                        <span className="flex items-center justify-center w-6 h-6 rounded-full
+                        <span
+                            className="flex items-center justify-center w-6 h-6 rounded-full
                             bg-emerald-500 text-white text-[11px] font-black"
-                            title="Common word">
+                            title="Common word"
+                        >
                             C
                         </span>
                     )}
@@ -76,9 +89,11 @@ export function WordCard({ word, isActive, onClick, onKanjiClick, onXrefClick }:
                             aria-label="Play pronunciation"
                             onClick={playAudio}
                             className={`p-1.5 rounded-full transition-colors
-                            ${audioPlaying
-                                ? "bg-blue-100 text-blue-600"
-                                : "hover:bg-gray-100 text-gray-400 hover:text-gray-700"}`}
+                            ${
+                                audioPlaying
+                                    ? "bg-blue-100 text-blue-600"
+                                    : "hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+                            }`}
                         >
                             <Volume2 className="w-4 h-4" />
                         </button>
@@ -102,7 +117,10 @@ export function WordCard({ word, isActive, onClick, onKanjiClick, onXrefClick }:
                             </span>
 
                             {/* Contextual tag row (information, misc[], field, xref) */}
-                            {(sense.information || sense.misc.length > 0 || sense.field || sense.xref) && (
+                            {(sense.information ||
+                                sense.misc.length > 0 ||
+                                sense.field ||
+                                sense.xref) && (
                                 <div className="flex flex-wrap gap-1 mt-1">
                                     {sense.information && (
                                         <span className="px-1.5 py-0.5 text-[11px] bg-gray-50 text-gray-500 border border-gray-200 rounded">
@@ -110,7 +128,10 @@ export function WordCard({ word, isActive, onClick, onKanjiClick, onXrefClick }:
                                         </span>
                                     )}
                                     {sense.misc.map((m) => (
-                                        <span key={m} className="px-1.5 py-0.5 text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded capitalize">
+                                        <span
+                                            key={m}
+                                            className="px-1.5 py-0.5 text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded capitalize"
+                                        >
                                             {m}
                                         </span>
                                     ))}
@@ -129,8 +150,7 @@ export function WordCard({ word, isActive, onClick, onKanjiClick, onXrefClick }:
                                                 bg-blue-50 text-blue-600 border border-blue-200 rounded
                                                 hover:bg-blue-100 transition-colors"
                                         >
-                                            <ArrowRight className="w-2.5 h-2.5" />
-                                            {sense.xref}
+                                            See also {sense.xref}
                                         </button>
                                     )}
                                 </div>
@@ -141,9 +161,11 @@ export function WordCard({ word, isActive, onClick, onKanjiClick, onXrefClick }:
                         {sense.pos.length > 0 && (
                             <div className="flex flex-col gap-0.5 items-end self-start shrink-0">
                                 {sense.pos.map((p) => (
-                                    <span key={p}
+                                    <span
+                                        key={p}
                                         className="text-[10px] text-blue-600 bg-blue-50 border border-blue-100
-                                            px-1.5 py-0.5 rounded whitespace-nowrap leading-tight">
+                                            px-1.5 py-0.5 rounded whitespace-nowrap leading-tight"
+                                    >
                                         {p}
                                     </span>
                                 ))}
@@ -160,7 +182,10 @@ export function WordCard({ word, isActive, onClick, onKanjiClick, onXrefClick }:
                         <button
                             key={char}
                             id={`kanji-btn-${char}`}
-                            onClick={(e) => { e.stopPropagation(); onKanjiClick(char); }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onKanjiClick(char);
+                            }}
                             className="px-2 py-1 text-lg font-bold bg-gray-50 border border-gray-200 rounded-lg
                                 hover:bg-gray-900 hover:text-white hover:border-gray-900 transition-all duration-150"
                             title={`Search kanji: ${char}`}

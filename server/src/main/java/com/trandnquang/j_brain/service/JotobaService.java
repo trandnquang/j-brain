@@ -386,16 +386,17 @@ public class JotobaService {
      * WHY: Proxied through backend — browser cannot call Jotoba directly (CORS).
      * Returns up to 10 formatted strings: "secondary (primary)" or just "primary".
      */
-    public Mono<List<String>> fetchSuggestions(String input) {
+    public Mono<List<String>> fetchSuggestions(String input, int searchType) {
         return jotobaWebClient.post()
                 .uri("/suggestion")
-                .bodyValue(Map.of("input", input, "lang", "en-US", "search_type", 0))
+                .bodyValue(Map.of("input", input, "lang", "en-US", "search_type", String.valueOf(searchType)))
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .map(json -> {
                     List<String> suggestions = new ArrayList<>();
-                    if (json.isArray()) {
-                        json.forEach(item -> {
+                    JsonNode suggestionsNode = json.path("suggestions");
+                    if (suggestionsNode.isArray()) {
+                        suggestionsNode.forEach(item -> {
                             String primary = item.path("primary").asText("");
                             String secondary = item.has("secondary") && !item.path("secondary").isNull()
                                     ? item.path("secondary").asText("") : "";

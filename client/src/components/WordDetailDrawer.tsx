@@ -1,11 +1,11 @@
 import { X, Volume2, Plus, Loader2, Sparkles, BookOpen } from "lucide-react";
-import { useDecks, useCreateFlashcard, useAiExamples } from "../hooks/useApi";
+import { useDecks, useFlashcards, useCreateFlashcard, useAiExamples } from "../hooks/useApi";
 import { Button } from "./ui/button";
 import { FuriganaText } from "./FuriganaText";
 import { PitchAccentSVG } from "./PitchAccentSVG";
 import { SenseRow } from "./SenseRow";
 import { KanjiPill } from "./KanjiPill";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { WordResultDTO, ExampleResponse } from "../types/api";
 
 interface Props {
@@ -54,6 +54,26 @@ export function WordDetailDrawer({ result, onClose, onNavigate }: Props) {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    /** WHY: Reset save-to-deck UI when switching between words to prevent stale "Saved" state. */
+    useEffect(() => {
+        setSaved(false);
+        setSaving(false);
+        setError(null);
+    }, [result?.keyword, result?.kana]);
+
+    /**
+     * WHY: Fetch flashcards for the selected deck so we can detect duplicates
+     * client-side, preventing a 409 Conflict from the backend unique constraint.
+     */
+    const { data: deckCards } = useFlashcards(selectedDeckId || null);
+
+    /** Auto-detect if the current word already exists in the selected deck. */
+    useEffect(() => {
+        if (!deckCards || !result) return;
+        const displayKw = result.keyword ?? result.kana;
+        const exists = deckCards.some((c) => c.keyword === displayKw);
+        if (exists) setSaved(true);
+    }, [deckCards, result]);
     // ── AI examples via useQuery (cached per keyword, no re-fire on remount) ───
     const meanings = result?.senses.flatMap((s) => s.glosses) ?? [];
     const keyword = result?.keyword ?? result?.kana ?? null;

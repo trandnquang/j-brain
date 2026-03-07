@@ -23,6 +23,12 @@ function parseUserFromToken(token: string): AuthResponse | null {
     try {
         const [, payload] = token.split(".");
         const decoded = JSON.parse(atob(payload));
+        
+        // Ensure token hasn't expired (exp is in seconds)
+        if (decoded.exp && (decoded.exp * 1000 < Date.now())) {
+            return null;
+        }
+
         // JWT subject is the email — we only have minimal info without a /me endpoint
         return { token, id: "", username: "", email: decoded.sub ?? "" };
     } catch {
@@ -33,7 +39,13 @@ function parseUserFromToken(token: string): AuthResponse | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<AuthResponse | null>(() => {
         const stored = getToken();
-        return stored ? parseUserFromToken(stored) : null;
+        if (stored) {
+            const parsed = parseUserFromToken(stored);
+            if (parsed) return parsed;
+            // Token invalid or expired, clear it
+            clearToken();
+        }
+        return null;
     });
 
     const login = useCallback(async (creds: LoginRequest) => {

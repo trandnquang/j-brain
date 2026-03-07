@@ -21,7 +21,8 @@ import java.util.List;
  * Tatoeba (CORS + rate-limit protection per spec).
  *
  * <p>
- * WHY always 200: React Query requires query functions to return a non-undefined
+ * WHY always 200: React Query requires query functions to return a
+ * non-undefined
  * value. Returning 204 No Content causes the frontend fetch wrapper to return
  * undefined, which React Query rejects at runtime. Always returning 200 + []
  * is the correct contract for search endpoints.
@@ -43,14 +44,18 @@ public class SearchController {
      */
     @GetMapping("/suggestions")
     @Operation(summary = "Fetch search suggestions (Jotoba autocomplete proxy)")
-    public Mono<List<String>> suggestions(@RequestParam @NotBlank String input) {
-        return jotobaService.fetchSuggestions(input);
+    public Mono<List<String>> suggestions(
+            @RequestParam @NotBlank String input,
+            @RequestParam(defaultValue = "0") int searchType) {
+        return jotobaService.fetchSuggestions(input, searchType);
     }
 
     /**
      * GET /api/v1/search/by-radical?radicals=一,丿&language=English
-     * WHY: GET (not POST) so React Query can cache results by the radical combo key.
-     * Radicals are comma-delimited to keep the URL cacheable without a request body.
+     * WHY: GET (not POST) so React Query can cache results by the radical combo
+     * key.
+     * Radicals are comma-delimited to keep the URL cacheable without a request
+     * body.
      */
     @GetMapping("/by-radical")
     @Operation(summary = "Search kanji by radical combination (Jotoba by_radical proxy)")

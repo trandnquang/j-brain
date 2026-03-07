@@ -1,13 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import {
-    Search,
-    X,
-    Loader2,
-    ChevronDown,
-    Globe,
-    Inbox,
-} from "lucide-react";
+import { Search, X, Loader2, ChevronDown, Globe, Inbox } from "lucide-react";
 import {
     useWordSearch,
     useKanjiSearch,
@@ -25,22 +18,30 @@ import type { WordResultDTO } from "../types/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type SearchMode = "words" | "kanji" | "sentences" | "names";
-type Language   = "English" | "Vietnamese" | "German" | "French" | "Spanish";
+type Language = "English" | "Vietnamese" | "German" | "French" | "Spanish";
 
-const MODES: { value: SearchMode; label: string; icon: string }[] = [
-    { value: "words",     label: "Words",     icon: "文" },
-    { value: "kanji",     label: "Kanji",     icon: "漢" },
-    { value: "sentences", label: "Sentences", icon: "文章" },
-    { value: "names",     label: "Names",     icon: "名" },
+const MODES: { value: SearchMode; label: string }[] = [
+    { value: "words", label: "Words" },
+    { value: "kanji", label: "Kanji" },
+    { value: "sentences", label: "Sentences" },
+    { value: "names", label: "Names" },
 ];
 
 const LANGUAGES: { value: Language; label: string }[] = [
-    { value: "English",    label: "日 → EN" },
-    { value: "Vietnamese", label: "日 → VI" },
-    { value: "German",     label: "日 → DE" },
-    { value: "French",     label: "日 → FR" },
-    { value: "Spanish",    label: "日 → ES" },
+    { value: "English", label: "JP ↔ EN" },
+    { value: "Vietnamese", label: "JP ↔ VI" },
+    { value: "German", label: "JP ↔ DE" },
+    { value: "French", label: "JP ↔ FR" },
+    { value: "Spanish", label: "JP ↔ ES" },
 ];
+
+/** WHY: Jotoba suggestion API uses numeric search_type per search category. */
+const MODE_TO_SEARCH_TYPE: Record<SearchMode, number> = {
+    words: 0,
+    kanji: 1,
+    sentences: 2,
+    names: 3,
+};
 
 const SUGGESTION_DEBOUNCE_MS = 250;
 
@@ -53,47 +54,63 @@ const SUGGESTION_DEBOUNCE_MS = 250;
  * - Clear (×) button resets input and results
  */
 export default function DictionarySearch() {
-    const navigate     = useNavigate();
-    const [params]     = useSearchParams();
+    const navigate = useNavigate();
+    const [params] = useSearchParams();
 
     // ── Derive state from URL (enables native browser back/forward) ──────────
     // ?q=食べる&mode=words&lang=English
-    const urlKeyword   = params.get("q")    ?? "";
-    const urlMode      = (params.get("mode") ?? "words") as SearchMode;
-    const urlLang      = (params.get("lang") ?? "English") as Language;
+    const urlKeyword = params.get("q") ?? "";
+    const urlMode = (params.get("mode") ?? "words") as SearchMode;
+    const urlLang = (params.get("lang") ?? "English") as Language;
 
     // Local controlled state for the input (typed but not yet submitted)
-    const [input, setInput]             = useState(urlKeyword);
-    const [suggInput, setSuggInput]     = useState("");
+    const [input, setInput] = useState(urlKeyword);
+    const [suggInput, setSuggInput] = useState("");
     const [showSuggestions, setShowSugg] = useState(false);
     const [showLangMenu, setShowLangMenu] = useState(false);
     const [showRadicalPicker, setShowRadicalPicker] = useState(false);
-    const [selectedWord, setSelectedWord] = useState<WordResultDTO | null>(null);
+    const [selectedWord, setSelectedWord] = useState<WordResultDTO | null>(
+        null,
+    );
 
-    const debounceRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const inputRef        = useRef<HTMLInputElement>(null);
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
     const suggContainerRef = useRef<HTMLDivElement>(null);
-    const radicalBtnRef   = useRef<HTMLButtonElement>(null);
+    const radicalBtnRef = useRef<HTMLButtonElement>(null);
 
     // ── Sync input when URL changes (browser back/forward) ───────────────────
-    useEffect(() => { setInput(urlKeyword); }, [urlKeyword]);
+    useEffect(() => {
+        setInput(urlKeyword);
+    }, [urlKeyword]);
 
     // ── Suggestion debounce ───────────────────────────────────────────────────
     useEffect(() => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        if (!input.trim()) { setSuggInput(""); return; }
-        debounceRef.current = setTimeout(() => setSuggInput(input.trim()), SUGGESTION_DEBOUNCE_MS);
-        return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+        if (!input.trim()) {
+            setSuggInput("");
+            return;
+        }
+        debounceRef.current = setTimeout(
+            () => setSuggInput(input.trim()),
+            SUGGESTION_DEBOUNCE_MS,
+        );
+        return () => {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+        };
     }, [input]);
 
     // ── Close dropdowns on outside click ─────────────────────────────────────
     useEffect(() => {
         const handler = (e: MouseEvent) => {
-            if (!suggContainerRef.current?.contains(e.target as Node)) setShowSugg(false);
+            if (!suggContainerRef.current?.contains(e.target as Node))
+                setShowSugg(false);
             // Close lang menu or radical picker on click outside
             const target = e.target as HTMLElement;
-            if (!target.closest("#lang-menu-root"))   setShowLangMenu(false);
-            if (!target.closest("#radical-modal") && !radicalBtnRef.current?.contains(target)) {
+            if (!target.closest("#lang-menu-root")) setShowLangMenu(false);
+            if (
+                !target.closest("#radical-modal") &&
+                !radicalBtnRef.current?.contains(target)
+            ) {
                 setShowRadicalPicker(false);
             }
         };
@@ -107,15 +124,20 @@ export default function DictionarySearch() {
      * entry. The browser's Back/Forward buttons then navigate between searches
      * without any custom stack management (useSearchHistory removed).
      */
-    const submitSearch = useCallback((kw: string, overrideMode?: SearchMode, overrideLang?: Language) => {
-        const q    = kw.trim();
-        const mode = overrideMode ?? urlMode;
-        const lang = overrideLang ?? urlLang;
-        if (!q) return;
-        setInput(q);
-        setShowSugg(false);
-        navigate(`/?q=${encodeURIComponent(q)}&mode=${mode}&lang=${encodeURIComponent(lang)}`);
-    }, [navigate, urlMode, urlLang]);
+    const submitSearch = useCallback(
+        (kw: string, overrideMode?: SearchMode, overrideLang?: Language) => {
+            const q = kw.trim();
+            const mode = overrideMode ?? urlMode;
+            const lang = overrideLang ?? urlLang;
+            if (!q) return;
+            setInput(q);
+            setShowSugg(false);
+            navigate(
+                `/?q=${encodeURIComponent(q)}&mode=${mode}&lang=${encodeURIComponent(lang)}`,
+            );
+        },
+        [navigate, urlMode, urlLang],
+    );
 
     const handleSearch = (e: React.FormEvent) => {
         e.preventDefault();
@@ -123,7 +145,9 @@ export default function DictionarySearch() {
     };
 
     const handleSuggestionClick = (s: string) => {
-        submitSearch(s.split(" ")[0]);
+        // Format is "secondary (primary)" or just "primary"
+        const match = s.match(/^(.+?)\s*\(/);
+        submitSearch(match ? match[1] : s);
         inputRef.current?.focus();
     };
 
@@ -131,17 +155,24 @@ export default function DictionarySearch() {
         setInput("");
         setSuggInput("");
         setShowSugg(false);
-        navigate("/?q=&mode=" + urlMode + "&lang=" + encodeURIComponent(urlLang), { replace: true });
+        navigate(
+            "/?q=&mode=" + urlMode + "&lang=" + encodeURIComponent(urlLang),
+            { replace: true },
+        );
         inputRef.current?.focus();
     };
 
     const handleModeChange = (mode: SearchMode) => {
-        navigate(`/?q=${encodeURIComponent(urlKeyword)}&mode=${mode}&lang=${encodeURIComponent(urlLang)}`);
+        navigate(
+            `/?q=${encodeURIComponent(urlKeyword)}&mode=${mode}&lang=${encodeURIComponent(urlLang)}`,
+        );
     };
 
     const handleLangChange = (lang: Language) => {
         setShowLangMenu(false);
-        navigate(`/?q=${encodeURIComponent(urlKeyword)}&mode=${urlMode}&lang=${encodeURIComponent(lang)}`);
+        navigate(
+            `/?q=${encodeURIComponent(urlKeyword)}&mode=${urlMode}&lang=${encodeURIComponent(lang)}`,
+        );
     };
 
     const handleKanjiClick = (char: string) => {
@@ -149,14 +180,32 @@ export default function DictionarySearch() {
     };
 
     // ── Queries (driven by URL params only) ───────────────────────────────────
-    const { data: suggestions = [] } = useSuggestions(suggInput);
-    const wordQuery     = useWordSearch(    urlMode === "words"     ? urlKeyword : "", urlLang);
-    const kanjiQuery    = useKanjiSearch(   urlMode === "kanji"     ? urlKeyword : "", urlLang);
-    const sentenceQuery = useSentenceSearch(urlMode === "sentences" ? urlKeyword : "", urlLang);
-    const nameQuery     = useNameSearch(    urlMode === "names"     ? urlKeyword : "", urlLang);
+    const searchType = MODE_TO_SEARCH_TYPE[urlMode];
+    const { data: suggestions = [] } = useSuggestions(suggInput, searchType);
+    const wordQuery = useWordSearch(
+        urlMode === "words" ? urlKeyword : "",
+        urlLang,
+    );
+    const kanjiQuery = useKanjiSearch(
+        urlMode === "kanji" ? urlKeyword : "",
+        urlLang,
+    );
+    const sentenceQuery = useSentenceSearch(
+        urlMode === "sentences" ? urlKeyword : "",
+        urlLang,
+    );
+    const nameQuery = useNameSearch(
+        urlMode === "names" ? urlKeyword : "",
+        urlLang,
+    );
 
-    const activeQuery = { words: wordQuery, kanji: kanjiQuery, sentences: sentenceQuery, names: nameQuery }[urlMode];
-    const isFetching  = activeQuery.isFetching;
+    const activeQuery = {
+        words: wordQuery,
+        kanji: kanjiQuery,
+        sentences: sentenceQuery,
+        names: nameQuery,
+    }[urlMode];
+    const isFetching = activeQuery.isFetching;
 
     const currentLang = LANGUAGES.find((l) => l.value === urlLang)!;
 
@@ -165,17 +214,18 @@ export default function DictionarySearch() {
             <div className="max-w-3xl mx-auto space-y-5">
                 {/* ── Page title ── */}
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Dictionary</h1>
-                    <p className="text-gray-500 mt-1 text-sm">
-                        Search in Japanese (Kana / Kanji / Romaji) — use browser ← → for history
-                    </p>
+                    <h1 className="text-3xl font-bold tracking-tight">
+                        Dictionary
+                    </h1>
                 </div>
 
                 {/* ── Search bar ── */}
                 <div className="space-y-3">
                     {/* Row 1: language | input | clear | radical-btn | search-btn */}
-                    <form onSubmit={handleSearch} className="flex gap-2 items-stretch">
-
+                    <form
+                        onSubmit={handleSearch}
+                        className="flex gap-2 items-stretch"
+                    >
                         {/* Language dropdown */}
                         <div className="relative" id="lang-menu-root">
                             <button
@@ -187,21 +237,27 @@ export default function DictionarySearch() {
                                     transition-colors whitespace-nowrap"
                             >
                                 <Globe className="w-3.5 h-3.5 text-gray-400" />
-                                {currentLang?.label ?? "日 → EN"}
+                                {currentLang?.label ?? "JP ↔ EN"}
                                 <ChevronDown className="w-3 h-3 text-gray-400" />
                             </button>
                             {showLangMenu && (
-                                <ul className="absolute top-full mt-1 left-0 z-30 bg-white border border-gray-200
-                                    rounded-xl shadow-lg overflow-hidden min-w-[130px]">
+                                <ul
+                                    className="absolute top-full mt-1 left-0 z-30 bg-white border border-gray-200
+                                    rounded-xl shadow-lg overflow-hidden min-w-[130px]"
+                                >
                                     {LANGUAGES.map((l) => (
                                         <li key={l.value}>
                                             <button
                                                 type="button"
-                                                onClick={() => handleLangChange(l.value)}
+                                                onClick={() =>
+                                                    handleLangChange(l.value)
+                                                }
                                                 className={`w-full text-left px-4 py-2.5 text-sm transition-colors
-                                                    ${urlLang === l.value
-                                                        ? "bg-gray-900 text-white font-semibold"
-                                                        : "hover:bg-gray-50 text-gray-700"}`}
+                                                    ${
+                                                        urlLang === l.value
+                                                            ? "bg-gray-900 text-white font-semibold"
+                                                            : "hover:bg-gray-50 text-gray-700"
+                                                    }`}
                                             >
                                                 {l.label}
                                             </button>
@@ -220,15 +276,22 @@ export default function DictionarySearch() {
                                     text-base focus:outline-none focus:ring-2 focus:ring-gray-300
                                     placeholder:text-gray-400 transition-shadow"
                                 placeholder={
-                                    urlMode === "words"     ? "e.g. 食べる, taberu, to eat…"  :
-                                    urlMode === "kanji"     ? "e.g. 走, 人, 食…"              :
-                                    urlMode === "sentences" ? "e.g. 日本語を勉強する…"         :
-                                                              "e.g. 田中, Tanaka…"}
+                                    urlMode === "words"
+                                        ? "e.g. 食べる, taberu, to eat…"
+                                        : urlMode === "kanji"
+                                          ? "e.g. 走, 人, 食…"
+                                          : urlMode === "sentences"
+                                            ? "e.g. 日本語を勉強する…"
+                                            : "e.g. 田中, Tanaka…"
+                                }
                                 value={input}
-                                onFocus={() => input.trim() && setShowSugg(true)}
+                                onFocus={() =>
+                                    input.trim() && setShowSugg(true)
+                                }
                                 onChange={(e) => {
                                     setInput(e.target.value);
-                                    if (e.target.value.trim()) setShowSugg(true);
+                                    if (e.target.value.trim())
+                                        setShowSugg(true);
                                 }}
                                 autoComplete="off"
                             />
@@ -246,14 +309,20 @@ export default function DictionarySearch() {
                             )}
                             {/* Autocomplete */}
                             {showSuggestions && suggestions.length > 0 && (
-                                <ul className="absolute top-full mt-1.5 left-0 right-0 z-20
-                                    bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden">
+                                <ul
+                                    className="absolute top-full mt-1.5 left-0 right-0 z-20
+                                    bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden"
+                                >
                                     {suggestions.map((s, i) => (
                                         <li key={i}>
                                             <button
                                                 type="button"
-                                                onMouseDown={(e) => e.preventDefault()}
-                                                onClick={() => handleSuggestionClick(s)}
+                                                onMouseDown={(e) =>
+                                                    e.preventDefault()
+                                                }
+                                                onClick={() =>
+                                                    handleSuggestionClick(s)
+                                                }
                                                 className="w-full text-left px-4 py-2.5 text-sm text-gray-800
                                                     hover:bg-gray-50 flex items-center gap-2 transition-colors"
                                             >
@@ -274,9 +343,11 @@ export default function DictionarySearch() {
                             title="Search kanji by radical"
                             onClick={() => setShowRadicalPicker((v) => !v)}
                             className={`h-12 px-3.5 rounded-xl border font-bold text-lg transition-colors
-                                ${showRadicalPicker
-                                    ? "bg-blue-600 text-white border-blue-600"
-                                    : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+                                ${
+                                    showRadicalPicker
+                                        ? "bg-blue-600 text-white border-blue-600"
+                                        : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                                }`}
                         >
                             部
                         </button>
@@ -288,9 +359,11 @@ export default function DictionarySearch() {
                             className="h-12 px-5 bg-gray-900 text-white rounded-xl hover:bg-gray-700
                                 transition-colors flex items-center gap-2 font-medium whitespace-nowrap"
                         >
-                            {isFetching
-                                ? <Loader2 className="w-4 h-4 animate-spin" />
-                                : <Search className="w-4 h-4" />}
+                            {isFetching ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Search className="w-4 h-4" />
+                            )}
                             Search
                         </button>
                     </form>
@@ -319,11 +392,12 @@ export default function DictionarySearch() {
                                 onClick={() => handleModeChange(m.value)}
                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium
                                     whitespace-nowrap transition-colors
-                                    ${urlMode === m.value
-                                        ? "bg-gray-900 text-white"
-                                        : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+                                    ${
+                                        urlMode === m.value
+                                            ? "bg-gray-900 text-white"
+                                            : "bg-white border border-gray-200 text-gray-600 hover:bg-gray-50"
+                                    }`}
                             >
-                                <span className="font-bold text-base leading-none">{m.icon}</span>
                                 {m.label}
                             </button>
                         ))}
@@ -332,14 +406,15 @@ export default function DictionarySearch() {
 
                 {/* ── Results ── */}
                 <div className="space-y-4">
-
                     {/* WORDS */}
                     {urlMode === "words" && (
                         <>
                             {!urlKeyword && <EmptyHint mode="words" />}
-                            {urlKeyword && !wordQuery.isFetching && wordQuery.data?.length === 0 && (
-                                <EmptyState keyword={urlKeyword} />
-                            )}
+                            {urlKeyword &&
+                                !wordQuery.isFetching &&
+                                wordQuery.data?.length === 0 && (
+                                    <EmptyState keyword={urlKeyword} />
+                                )}
                             {wordQuery.data?.map((word) => (
                                 <WordCard
                                     key={word.keyword ?? word.kana}
@@ -347,7 +422,9 @@ export default function DictionarySearch() {
                                     isActive={selectedWord?.kana === word.kana}
                                     onClick={() => setSelectedWord(word)}
                                     onKanjiClick={handleKanjiClick}
-                                    onXrefClick={(xref) => submitSearch(xref, "words")}
+                                    onXrefClick={(xref) =>
+                                        submitSearch(xref, "words")
+                                    }
                                 />
                             ))}
                         </>
@@ -357,11 +434,17 @@ export default function DictionarySearch() {
                     {urlMode === "kanji" && (
                         <>
                             {!urlKeyword && <EmptyHint mode="kanji" />}
-                            {urlKeyword && !kanjiQuery.isFetching && kanjiQuery.data?.length === 0 && (
-                                <EmptyState keyword={urlKeyword} />
-                            )}
+                            {urlKeyword &&
+                                !kanjiQuery.isFetching &&
+                                kanjiQuery.data?.length === 0 && (
+                                    <EmptyState keyword={urlKeyword} />
+                                )}
                             {kanjiQuery.data?.map((k) => (
-                                <KanjiCard key={k.literal} kanji={k} onPartClick={handleKanjiClick} />
+                                <KanjiCard
+                                    key={k.literal}
+                                    kanji={k}
+                                    onPartClick={handleKanjiClick}
+                                />
                             ))}
                         </>
                     )}
@@ -370,9 +453,11 @@ export default function DictionarySearch() {
                     {urlMode === "sentences" && (
                         <>
                             {!urlKeyword && <EmptyHint mode="sentences" />}
-                            {urlKeyword && !sentenceQuery.isFetching && sentenceQuery.data?.length === 0 && (
-                                <EmptyState keyword={urlKeyword} />
-                            )}
+                            {urlKeyword &&
+                                !sentenceQuery.isFetching &&
+                                sentenceQuery.data?.length === 0 && (
+                                    <EmptyState keyword={urlKeyword} />
+                                )}
                             {sentenceQuery.data?.map((s, i) => (
                                 <SentenceCard key={i} sentence={s} />
                             ))}
@@ -383,9 +468,11 @@ export default function DictionarySearch() {
                     {urlMode === "names" && (
                         <>
                             {!urlKeyword && <EmptyHint mode="names" />}
-                            {urlKeyword && !nameQuery.isFetching && nameQuery.data?.length === 0 && (
-                                <EmptyState keyword={urlKeyword} />
-                            )}
+                            {urlKeyword &&
+                                !nameQuery.isFetching &&
+                                nameQuery.data?.length === 0 && (
+                                    <EmptyState keyword={urlKeyword} />
+                                )}
                             {nameQuery.data?.map((n, i) => (
                                 <NameCard key={i} name={n} />
                             ))}
@@ -408,11 +495,30 @@ export default function DictionarySearch() {
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
-const MODE_HINTS: Record<SearchMode, { icon: string; text: string; sub: string }> = {
-    words:     { icon: "辞", text: "Search for a Japanese word",      sub: "Enter a word or phrase and press Search" },
-    kanji:     { icon: "漢", text: "Search for a kanji character",    sub: "Enter a kanji, click 部 to pick by radical" },
-    sentences: { icon: "文", text: "Search for example sentences",    sub: "Enter a keyword to find example sentences" },
-    names:     { icon: "名", text: "Search for Japanese names",       sub: "Enter a name in kanji, kana, or romaji" },
+const MODE_HINTS: Record<
+    SearchMode,
+    { icon: string; text: string; sub: string }
+> = {
+    words: {
+        icon: "辞",
+        text: "Search for a Japanese word",
+        sub: "Enter a word or phrase and press Search",
+    },
+    kanji: {
+        icon: "漢",
+        text: "Search for a kanji character",
+        sub: "Enter a kanji, click 部 to pick by radical",
+    },
+    sentences: {
+        icon: "文",
+        text: "Search for example sentences",
+        sub: "Enter a keyword to find example sentences",
+    },
+    names: {
+        icon: "名",
+        text: "Search for Japanese names",
+        sub: "Enter a name in kanji, kana, or romaji",
+    },
 };
 
 function EmptyHint({ mode }: { mode: SearchMode }) {
@@ -431,7 +537,9 @@ function EmptyState({ keyword }: { keyword: string }) {
         <div className="flex flex-col items-center py-16 text-gray-400 gap-2">
             <Inbox className="w-10 h-10 opacity-30" />
             <p className="font-medium">No results for "{keyword}"</p>
-            <p className="text-sm">Try a different spelling or switch search mode.</p>
+            <p className="text-sm">
+                Try a different spelling or switch search mode.
+            </p>
         </div>
     );
 }

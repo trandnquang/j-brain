@@ -31,6 +31,18 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
     const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
+    
+    // Global Auth Interceptor
+    // If we receive a 401 or 403, our token might be expired or invalid.
+    if (res.status === 401 || res.status === 403) {
+        clearToken();
+        // Prevent redirect loops and only redirect if we aren't already logging in
+        if (!window.location.pathname.startsWith('/auth')) {
+            window.location.href = '/auth';
+        }
+        throw new Error("Unauthorized");
+    }
+
     if (res.status === 204) return undefined as T;
     const data = await res.json();
     if (!res.ok) throw data;
@@ -53,9 +65,9 @@ export const auth = {
 
 // ── Search (Phase 2) ──────────────────────────────────────────────────────────
 export const search = {
-    suggestions: (input: string) =>
+    suggestions: (input: string, searchType: number = 0) =>
         request<string[]>(
-            `/api/v1/search/suggestions?input=${encodeURIComponent(input)}`,
+            `/api/v1/search/suggestions?input=${encodeURIComponent(input)}&searchType=${searchType}`,
         ),
     words: (keyword: string, language = "English") =>
         request<WordResultDTO[]>(
